@@ -98,7 +98,7 @@ public:
 class Framebuffer
 {
 	GLuint		m_name, m_subname;
-	GLuint		m_colorname, m_subcolorname, m_depthname;
+	GLuint		m_colorname, m_subcolorname, m_depthname, m_subdepthname;
 	uint32_t	m_width, m_height;
 	uint32_t	m_samples;
 
@@ -121,6 +121,8 @@ public:
 	//When called without MSAA, just binds m_name to the read slot.
 	//When called with MSAA, will resolve to m_subname and bind that.
 	void BindForRead();
+	GLuint ColorTextureForRead();
+	GLuint DepthTextureForRead();
 
 	GLuint Handle() const
 	{
@@ -136,6 +138,31 @@ public:
 	{
 		return m_height;
 	}
+};
+
+void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
+void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+
+constexpr int NUM_BLOOM_FBOS = 16;
+struct BloomResources
+{
+	Framebuffer framebuffers[NUM_BLOOM_FBOS];
+	ShaderProgram thresholdshader;
+	ShaderProgram downsampleshader;
+	ShaderProgram mergeshader;
+	ShaderProgram compositeshader;
+	GLint threshold_gamma = -1;
+	GLint threshold_value = -1;
+	GLint threshold_use_depth_mask = -1;
+	GLint merge_spread = -1;
+	GLint composite_gamma = -1;
+	GLint composite_intensity = -1;
+
+	void InitShaders();
+	void DestroyShaders();
+	void DestroyFramebuffers();
+	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+		const rendering_state& render_state, float display_gamma, GLuint depth_texture);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

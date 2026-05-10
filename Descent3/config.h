@@ -70,8 +70,11 @@ extern bool Game_fullscreen;
 extern float Hud_text_scale;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
+extern bool DesiredOpenGLProfileExplicit;
 int ConfigNormalizeSupersamplingFactor(int factor);
 float ConfigNormalizeHudTextScale(float scale);
+float ConfigNormalizeBloomThreshold(float threshold);
+float ConfigNormalizeBloomIntensity(float intensity);
 
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //KEEP THESE MEMBERS IN THE SAME ORDER, IF YOU ADD,REMOVE, OR CHANGE ANYTHING IN THIS STRUCT, MAKE SURE YOU

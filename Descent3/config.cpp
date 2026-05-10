@@ -111,7 +111,13 @@ tGameToggles Game_toggles =
 	true
 };
 
-int DesiredOpenGLProfile = GLPROFILE_COMPAT; //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
+int DesiredOpenGLProfile = GLPROFILE_CORE; //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
+bool DesiredOpenGLProfileExplicit = false;
+
+static bool ConfigCanUsePerPixelLighting()
+{
+	return OpenGLProfile == GLPROFILE_CORE;
+}
 
 int ConfigNormalizeSupersamplingFactor(int factor)
 {
@@ -129,6 +135,24 @@ float ConfigNormalizeHudTextScale(float scale)
 	if (scale > 1.5f)
 		return 1.5f;
 	return scale;
+}
+
+float ConfigNormalizeBloomThreshold(float threshold)
+{
+	if (threshold < 0.0f)
+		return 0.0f;
+	if (threshold > 1.0f)
+		return 1.0f;
+	return threshold;
+}
+
+float ConfigNormalizeBloomIntensity(float intensity)
+{
+	if (intensity < 0.0f)
+		return 0.0f;
+	if (intensity > 1.0f)
+		return 1.0f;
+	return intensity;
 }
 
 static int SupersamplingFactorToIndex(int factor)
@@ -588,6 +612,7 @@ struct video_menu
 	bool* filtering;									// settings
 	bool* mipmapping;
 	bool* per_pixel_lighting;
+	bool* bloom_enabled;
 	bool* vsync;
 
 	int* resolution;									// all resolutions
@@ -663,6 +688,7 @@ struct video_menu
 	{
 		bool changed = false;
 		bool display_changed = fullscreen && sheet->HasChanged(fullscreen);
+		bool fov_changed = false;
 
 		if (filtering && sheet->HasChanged(filtering))
 		{
@@ -676,7 +702,17 @@ struct video_menu
 		}
 		if (per_pixel_lighting && sheet->HasChanged(per_pixel_lighting))
 		{
-			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
+			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
+			if (*per_pixel_lighting != Render_preferred_state.per_pixel_lighting)
+			{
+				*per_pixel_lighting = Render_preferred_state.per_pixel_lighting;
+				sheet->UpdateChanges();
+			}
+			changed = true;
+		}
+		if (bloom_enabled && sheet->HasChanged(bloom_enabled))
+		{
+			Render_preferred_state.bloom_enabled = *bloom_enabled;
 			changed = true;
 		}
 		if (vsync && sheet->HasChanged(vsync))
@@ -699,12 +735,15 @@ struct video_menu
 		{
 			Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
 			Render_FOV = Render_FOV_desired;
+			fov_changed = true;
 		}
 
 		if (changed)
 			rend_SetPreferredState(&Render_preferred_state);
 
-		apply_display_settings(display_changed);
+		bool display_applied = apply_display_settings(display_changed);
+		if (changed || fov_changed || display_applied)
+			sheet->UpdateChanges();
 	}
 
 	// sets the menu up.
@@ -738,12 +777,13 @@ struct video_menu
 		sheet->NewGroup(TXT_TOGGLES, 0, 120);
 		filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
-		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting", Render_preferred_state.per_pixel_lighting);
+		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
+			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
+		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 
-		sheet->NewGroup(TXT_MONITOR, 0, 180);
+		sheet->NewGroup(TXT_MONITOR, 0, 188);
 		vsync = sheet->AddLongCheckBox(TXT_CFG_VSYNCENABLED, (Render_preferred_state.vsync_on != 0));
 
-		sheet->AddText("");
 		sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
 		sheet->NewGroup("MSAA", 184, 0);
@@ -771,7 +811,9 @@ struct video_menu
 		if (mipmapping)
 			Render_preferred_state.mipping = (*mipmapping) ? 1 : 0;
 		if (per_pixel_lighting)
-			Render_preferred_state.per_pixel_lighting = *per_pixel_lighting;
+			Render_preferred_state.per_pixel_lighting = ConfigCanUsePerPixelLighting() && *per_pixel_lighting;
+		if (bloom_enabled)
+			Render_preferred_state.bloom_enabled = *bloom_enabled;
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)
@@ -796,10 +838,14 @@ struct video_menu
 		{
 			int olddesired = DesiredOpenGLProfile;
 			DesiredOpenGLProfile = (opengl_profile)*backend;
+			if (olddesired != DesiredOpenGLProfile)
+				DesiredOpenGLProfileExplicit = true;
 			if (olddesired != DesiredOpenGLProfile && DesiredOpenGLProfile != OpenGLProfile)
 			{
 				DoMessageBox(TXT_WARNING, "Changing the OpenGL profile will apply the next time you start Piccu Engine.", MSGBOX_OK);
 			}
+			if (DesiredOpenGLProfile != GLPROFILE_CORE)
+				Render_preferred_state.per_pixel_lighting = false;
 		}
 
 		if (Active_video_menu == this)

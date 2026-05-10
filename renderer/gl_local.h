@@ -80,12 +80,17 @@ class GL3Renderer : public IRenderer
 	Framebuffer framebuffers[NUM_GL3_FBOS];
 	Framebuffer resolved_framebuffer;
 	Framebuffer downscale_framebuffer;
+	Framebuffer bloom_source_framebuffer;
+	Framebuffer bloom_source_resolved_framebuffer;
+	Framebuffer bloom_source_downscale_framebuffer;
 	int framebuffer_current_draw = 0;
+	bool bloom_source_valid = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
+	BloomResources bloom;
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
@@ -186,7 +191,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -396,6 +401,8 @@ public:
 
 	// Tells the renderer the frame is over
 	void EndFrame() override;
+
+	void CaptureBloomSource() override;
 
 	// Clears the display to a specified color
 	void ClearScreen(ddgr_color color) override;

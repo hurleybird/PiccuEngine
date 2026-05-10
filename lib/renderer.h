@@ -257,6 +257,10 @@ struct renderer_preferred_state
 	ubyte supersampling_factor; //1, 2, or 4. Values above 1 render larger than the window and downscale.
 	ubyte msaa_samples; //0, 2, 4, or 8.
 	bool per_pixel_lighting;
+	bool bloom_enabled;
+	float bloom_threshold;
+	float bloom_intensity;
+	float bloom_spread;
 };
 
 struct renderer_lfb
@@ -302,6 +306,9 @@ void rend_StartFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_CLEAR_ZBUFFE
 
 // Tells the renderer the frame is over
 void rend_EndFrame();
+
+// Captures the current scene buffer as the source for frame-level bloom.
+void rend_CaptureBloomSource();
 
 // Init our renderer, pass the application object also.
 int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);

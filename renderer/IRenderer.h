@@ -157,6 +157,9 @@ public:
 	// Tells the renderer the frame is over
 	virtual void EndFrame() = 0;
 
+	// Captures the current scene buffer as the source for frame-level bloom.
+	virtual void CaptureBloomSource() = 0;
+
 	// Clears the display to a specified color
 	virtual void ClearScreen(ddgr_color color) = 0;
 

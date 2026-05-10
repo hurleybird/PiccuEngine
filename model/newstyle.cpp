@@ -124,6 +124,9 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 	int custom=0;
 	g3Codes face_cc;
 	int triface=0;
+	int lightmap_lmi_handle = -1;
+	int per_pixel_light_count = 0;
+	renderer_per_pixel_light per_pixel_lights[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS];
 
 	face_cc.cc_and=0xff;
 	face_cc.cc_or=0;
@@ -144,7 +147,8 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 	// Set radiosity lightmaps if needed
 	if (Polymodel_light_type==POLYMODEL_LIGHTING_LIGHTMAP)
 	{
-		rend_SetOverlayMap (LightmapInfo[Polylighting_lightmap_object->lightmap_faces[modelnum][facenum].lmi_handle].lm_handle);
+		lightmap_lmi_handle = Polylighting_lightmap_object->lightmap_faces[modelnum][facenum].lmi_handle;
+		rend_SetOverlayMap (LightmapInfo[lightmap_lmi_handle].lm_handle);
 		
 	}
 
@@ -352,8 +356,20 @@ inline void RenderSubmodelFace (poly_model *pm,bsp_info *sm,int facenum)
 
 	if (triface)
 		g3_SetTriangulationTest(1);
+
+	if (lightmap_lmi_handle >= 0 && UsePerPixelPolymodelLighting())
+	{
+		per_pixel_light_count = GetPerPixelLightmapLights((ushort)lightmap_lmi_handle, per_pixel_lights,
+			RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+		if (per_pixel_light_count > 0)
+			rend_SetPerPixelDynamicLighting(&LightmapInfo[lightmap_lmi_handle].normal,
+				per_pixel_light_count, per_pixel_lights);
+	}
 		
 	g3_DrawPoly(fp->nverts,pointlist,bm_handle,MAP_TYPE_BITMAP,&face_cc);
+
+	if (per_pixel_light_count > 0)
+		rend_SetPerPixelDynamicLighting(nullptr, 0, nullptr);
 
 	if (Polymodel_light_type==POLYMODEL_LIGHTING_GOURAUD && UsePerPixelPolymodelLighting())
 		rend_SetLighting(LS_GOURAUD);

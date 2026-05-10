@@ -1913,6 +1913,8 @@ void GameDrawMainView()
 	// Draw any render events
 	ProcessRenderEvents();
 
+	rend_CaptureBloomSource();
+
 	//We're done with this window
 	EndFrame();
 

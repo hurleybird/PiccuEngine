@@ -139,6 +139,7 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 	renderer_preferred_state old_state = OpenGL_preferred_state;
 
 	OpenGL_preferred_state = *pref_state;
+	OpenGL_preferred_state.per_pixel_lighting = false;
 	if (OpenGL_state.initted)
 	{
 		int reinit = 0;
@@ -193,6 +194,7 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 	else
 	{
 		OpenGL_preferred_state = *pref_state;
+		OpenGL_preferred_state.per_pixel_lighting = false;
 	}
 
 	CHECK_ERROR(33);
@@ -252,6 +254,10 @@ void GLCompatibilityRenderer::Flip(void)
 	OpenGL_verts_processed = 0;
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
+	Framebuffer* bloom_source = bloom_source_valid ? &bloom_source_framebuffer : nullptr;
+	Framebuffer* bloom_effect_source = bloom_source;
+	Framebuffer* bloom_scene_source = bloom_source;
+	GLuint bloom_depth_texture = 0;
 	int supersampling_factor = SupersamplingFactor();
 	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
 	if (supersampling_factor >= 4)
@@ -265,6 +271,22 @@ void GLCompatibilityRenderer::Flip(void)
 			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
 			downsampleshader_dest_origin);
 		present_framebuffer = &resolved_framebuffer;
+		if (bloom_source)
+		{
+			bloom_source_downscale_framebuffer.Update(OpenGL_state.screen_width * 2, OpenGL_state.screen_height * 2, 0);
+			bloom_source_resolved_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+			downsampleshader.Use();
+			bloom_source_framebuffer.DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
+				bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
+				downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+			downsampleshader.Use();
+			bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_resolved_framebuffer.Handle(), 0, 0,
+				bloom_source_resolved_framebuffer.Width(), bloom_source_resolved_framebuffer.Height(),
+				downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+			bloom_depth_texture = bloom_source_framebuffer.DepthTextureForRead();
+			bloom_scene_source = &bloom_source_resolved_framebuffer;
+			bloom_effect_source = &bloom_source_resolved_framebuffer;
+		}
 	}
 	else if (supersampling_factor >= 2)
 	{
@@ -273,11 +295,41 @@ void GLCompatibilityRenderer::Flip(void)
 			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
 			downsampleshader_dest_origin);
 		present_framebuffer = &resolved_framebuffer;
+		if (bloom_source)
+		{
+			bloom_source_resolved_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
+			downsampleshader.Use();
+			bloom_source_framebuffer.DownsampleTo(bloom_source_resolved_framebuffer.Handle(), 0, 0,
+				bloom_source_resolved_framebuffer.Width(), bloom_source_resolved_framebuffer.Height(),
+			downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+			bloom_depth_texture = bloom_source_framebuffer.DepthTextureForRead();
+			bloom_scene_source = &bloom_source_resolved_framebuffer;
+			bloom_effect_source = &bloom_source_resolved_framebuffer;
+		}
+	}
+	else if (bloom_source)
+	{
+		bloom_depth_texture = bloom_source_framebuffer.DepthTextureForRead();
 	}
 
-	blitshader.Use();
-	glUniform1f(blitshader_gamma, display_gamma);
-	present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth_texture);
+	if (bloom_framebuffer)
+	{
+		bloom.compositeshader.Use();
+		glUniform1f(bloom.composite_gamma, display_gamma);
+		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
+		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
+		GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
+		GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+	}
+	else
+	{
+		blitshader.Use();
+		glUniform1f(blitshader_gamma, display_gamma);
+		present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+	}
 	ShaderProgram::ClearBinding();
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -300,6 +352,7 @@ void GLCompatibilityRenderer::Flip(void)
 
 	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL1_FBOS;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	bloom_source_valid = false;
 
 #ifndef NDEBUG
 	err = glGetError();
@@ -319,6 +372,63 @@ void GLCompatibilityRenderer::Flip(void)
 
 void GLCompatibilityRenderer::EndFrame()
 {
+}
+
+void GLCompatibilityRenderer::CaptureBloomSource()
+{
+	bloom_source_valid = false;
+	if (!OpenGL_preferred_state.bloom_enabled)
+		return;
+
+	int width = FramebufferWidth();
+	int height = FramebufferHeight();
+	if (width <= 0 || height <= 0)
+		return;
+
+	int clip_w = OpenGL_state.clip_x2 - OpenGL_state.clip_x1;
+	int clip_h = OpenGL_state.clip_y2 - OpenGL_state.clip_y1;
+	if (clip_w <= 0 || clip_h <= 0)
+		return;
+
+	bloom_source_framebuffer.Update(width, height, RendererMsaaSamples(OpenGL_preferred_state));
+
+	GLint old_read = 0, old_draw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bloom_source_framebuffer.Handle());
+	glClearColor(0.0, 0.0, 0.0, 1.0);
+	glClearDepth(1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	int x1 = ScaledX(OpenGL_state.clip_x1);
+	int y1 = height - ScaledY(OpenGL_state.clip_y2);
+	int x2 = x1 + ScaledW(clip_w);
+	int y2 = y1 + ScaledH(clip_h);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	glBlitFramebuffer(x1, y1, x2, y2, x1, y1, x2, y2, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	if (scissor_enabled)
+		glEnable(GL_SCISSOR_TEST);
+	else
+		glDisable(GL_SCISSOR_TEST);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+
+	bloom_source_valid = true;
+	rend_RestoreLegacy();
 }
 
 
@@ -1019,6 +1129,8 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 	else
 		downscale_framebuffer.Destroy();
 
+	bloom_source_valid = false;
+
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
 	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
@@ -1039,6 +1151,11 @@ void GLCompatibilityRenderer::CloseFramebuffer(void)
 	}
 	resolved_framebuffer.Destroy();
 	downscale_framebuffer.Destroy();
+	bloom.DestroyFramebuffers();
+	bloom_source_framebuffer.Destroy();
+	bloom_source_resolved_framebuffer.Destroy();
+	bloom_source_downscale_framebuffer.Destroy();
+	bloom_source_valid = false;
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

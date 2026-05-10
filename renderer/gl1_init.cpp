@@ -474,6 +474,8 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	if (downsampleshader_dest_origin == -1)
 		Error("rend_Init: Failed to find downsample dest_origin uniform!");
 
+	bloom.InitShaders();
+
 
 	//[ISB] moved here.. stupid.
 	SetGammaValue(OpenGL_preferred_state.gamma);
@@ -494,6 +496,7 @@ void GLCompatibilityRenderer::Close()
 
 	blitshader.Destroy();
 	downsampleshader.Destroy();
+	bloom.DestroyShaders();
 	FreeImages();
 	if (framebuffer_ok)
 		CloseFramebuffer();

@@ -365,6 +365,13 @@ void SaveGameSettings()
 	Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
 	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 	Database->write("RS_per_pixel_lighting", Render_preferred_state.per_pixel_lighting);
+	Database->write("RS_bloom_enabled", Render_preferred_state.bloom_enabled);
+	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_threshold);
+	Database->write("RS_bloom_threshold", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_intensity);
+	Database->write("RS_bloom_intensity", tempbuffer, strlen(tempbuffer) + 1);
+	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
+	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -387,6 +394,7 @@ void SaveGameSettings()
 	Render_preferred_state.vsync_on = 0;
 #endif
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
+	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -479,6 +487,12 @@ void LoadGameSettings()
 	Render_preferred_state.msaa_samples = 0;
 	Render_preferred_state.supersampling_factor = 1;
 	Render_preferred_state.per_pixel_lighting = false;
+	Render_preferred_state.bloom_enabled = false;
+	Render_preferred_state.bloom_threshold = 0.75f;
+	Render_preferred_state.bloom_intensity = 0.75f;
+	Render_preferred_state.bloom_spread = 0.75f;
+	DesiredOpenGLProfile = GLPROFILE_CORE;
+	DesiredOpenGLProfileExplicit = false;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
@@ -590,6 +604,30 @@ void LoadGameSettings()
 	Database->read_int("RS_supersampling", &tempint);
 	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
 	Database->read("RS_per_pixel_lighting", &Render_preferred_state.per_pixel_lighting);
+	Database->read("RS_bloom_enabled", &Render_preferred_state.bloom_enabled);
+	templen = TEMPBUFFERSIZE;
+	if (Database->read("RS_bloom_threshold", tempbuffer, &templen))
+	{
+		Render_preferred_state.bloom_threshold = ConfigNormalizeBloomThreshold((float)strtod(tempbuffer, &stoptemp));
+	}
+	templen = TEMPBUFFERSIZE;
+	if (Database->read("RS_bloom_intensity", tempbuffer, &templen))
+	{
+		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(tempbuffer, &stoptemp));
+	}
+	int bloom_threshold_arg = FindArg("-bloomthreshold");
+	if (!bloom_threshold_arg)
+		bloom_threshold_arg = FindArg("-bloom-threshold");
+	const char* bloom_threshold_value = bloom_threshold_arg ? GetArg(bloom_threshold_arg + 1) : nullptr;
+	if (bloom_threshold_value && bloom_threshold_value[0])
+		Render_preferred_state.bloom_threshold = ConfigNormalizeBloomThreshold((float)strtod(bloom_threshold_value, &stoptemp));
+
+	int bloom_intensity_arg = FindArg("-bloomintensity");
+	if (!bloom_intensity_arg)
+		bloom_intensity_arg = FindArg("-bloom-intensity");
+	const char* bloom_intensity_value = bloom_intensity_arg ? GetArg(bloom_intensity_arg + 1) : nullptr;
+	if (bloom_intensity_value && bloom_intensity_value[0])
+		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);
@@ -603,7 +641,18 @@ void LoadGameSettings()
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
 	Database->read_int("RS_vsync",&Render_preferred_state.vsync_on);
+	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
 	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
+	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
+		DesiredOpenGLProfile = GLPROFILE_COMPAT;
+	if (!DesiredOpenGLProfileExplicit)
+		DesiredOpenGLProfile = GLPROFILE_CORE;
+	if (FindArg("-glcompat") || FindArg("-gl1") || FindArg("-openglcompat"))
+		DesiredOpenGLProfile = GLPROFILE_COMPAT;
+	if (FindArg("-glcore") || FindArg("-gl3") || FindArg("-openglcore"))
+		DesiredOpenGLProfile = GLPROFILE_CORE;
+	if (DesiredOpenGLProfile != GLPROFILE_CORE)
+		Render_preferred_state.per_pixel_lighting = false;
 
 	if (FindArg ("-vsync"))
 		Render_preferred_state.vsync_on=true;

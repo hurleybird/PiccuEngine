@@ -742,6 +742,7 @@ void ApplyLightingToSubmodel(object* obj, poly_model* pm, bsp_info* sm, float li
 	ushort* dest_data;
 	ushort lmilist[MAX_DYNAMIC_FACES];
 	int num_spoken_for = 0;
+	const bool per_pixel_lightmap_lighting = UsePerPixelRoomLighting();
 
 	int red_limit = 31;
 	int green_limit = 31;
@@ -778,7 +779,7 @@ void ApplyLightingToSubmodel(object* obj, poly_model* pm, bsp_info* sm, float li
 			continue;
 
 		// Ok, now we know that this light touches this face
-		if (Num_dynamic_faces >= MAX_DYNAMIC_FACES)
+		if (!per_pixel_lightmap_lighting && Num_dynamic_faces >= MAX_DYNAMIC_FACES)
 		{
 			mprintf((0, "Too many dynamic faces!\n"));
 			DoneLightingInstance();
@@ -829,6 +830,21 @@ void ApplyLightingToSubmodel(object* obj, poly_model* pm, bsp_info* sm, float li
 
 			if (!in_front)	// This face is completely behind, so bail!
 				continue;
+		}
+
+		if (per_pixel_lightmap_lighting)
+		{
+			AddPerPixelLightmapLight(fp->lmi_handle, &light_pos, light_dist, red_scale, green_scale, blue_scale,
+				Use_light_direction ? &light_dir : nullptr, dot_range);
+
+			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
+			{
+				lmilist[num_spoken_for] = fp->lmi_handle;
+				Lmi_spoken_for[fp->lmi_handle / 8] |= (1 << (fp->lmi_handle % 8));
+				num_spoken_for++;
+			}
+
+			continue;
 		}
 
 		// Compute face matrix
@@ -1161,6 +1177,7 @@ void ApplyLightingToObjects(vector* pos, int roomnum, float light_dist, float re
 	short objlist[MAX_DYNAMIC_FACES];
 	int num_objects, i;
 	float normalized_time[MAX_SUBOBJECTS];
+	const bool per_pixel_lightmap_lighting = UsePerPixelRoomLighting();
 
 	num_objects = fvi_QuickDistObjectList(pos, roomnum, light_dist, objlist, MAX_DYNAMIC_FACES, false, false, true);
 
@@ -1174,7 +1191,7 @@ void ApplyLightingToObjects(vector* pos, int roomnum, float light_dist, float re
 			continue;
 		}
 
-		if (obj->renderframe != ((FrameCount - 1) % 65536))
+		if (!per_pixel_lightmap_lighting && obj->renderframe != ((FrameCount - 1) % 65536))
 		{
 			if (obj != Viewer_object)
 				continue;

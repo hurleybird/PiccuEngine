@@ -53,10 +53,95 @@ void GL_DestroyFramebufferVAO()
 	fbVBOName = fbVAOName = 0;
 }
 
+void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter)
+{
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glClientActiveTextureARB(GL_TEXTURE0 + unit);
+
+	glActiveTexture(GL_TEXTURE0 + unit);
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glEnable(GL_TEXTURE_2D);
+
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+static void GL_SetEnabledState(GLenum cap, GLboolean enabled)
+{
+	if (enabled)
+		glEnable(cap);
+	else
+		glDisable(cap);
+}
+
+static void GL_RestoreFramebufferTextureState()
+{
+	for (int unit = 2; unit >= 1; unit--)
+	{
+		if (OpenGLProfile == GLPROFILE_COMPAT)
+			glClientActiveTextureARB(GL_TEXTURE0 + unit);
+		glActiveTexture(GL_TEXTURE0 + unit);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		if (OpenGLProfile == GLPROFILE_COMPAT)
+			glDisable(GL_TEXTURE_2D);
+	}
+
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glClientActiveTextureARB(GL_TEXTURE0);
+	glActiveTexture(GL_TEXTURE0);
+	rend_ClearBoundTextures();
+}
+
+void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+{
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
+	GLboolean depth_enabled = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean cull_enabled = glIsEnabled(GL_CULL_FACE);
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+
+	glDisable(GL_BLEND);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+
+	glBindVertexArray(fbVAOName);
+	GLint oldviewport[4];
+	glGetIntegerv(GL_VIEWPORT, oldviewport);
+	glViewport(x, y, w, h);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+
+	glClearColor(0.0, 0.0, 0.0, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
+
+	GL_SetEnabledState(GL_BLEND, blend_enabled);
+	GL_SetEnabledState(GL_DEPTH_TEST, depth_enabled);
+	GL_SetEnabledState(GL_CULL_FACE, cull_enabled);
+	GL_SetEnabledState(GL_SCISSOR_TEST, scissor_enabled);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	GL_RestoreFramebufferTextureState();
+	rend_RestoreLegacy();
+}
+
 Framebuffer::Framebuffer()
 {
 	m_width = m_height = 0;
-	m_name = m_subname = m_colorname = m_subcolorname = m_depthname = 0;
+	m_name = m_subname = m_colorname = m_subcolorname = m_depthname = m_subdepthname = 0;
 	m_samples = 0;
 }
 
@@ -124,6 +209,7 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 		if (m_subname == 0)
 		{
 			glGenTextures(1, &m_subcolorname);
+			glGenTextures(1, &m_subdepthname);
 			glGenFramebuffers(1, &m_subname);
 		}
 
@@ -140,9 +226,17 @@ void Framebuffer::Update(int width, int height, int msaa_samples)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+		glBindTexture(GL_TEXTURE_2D, m_subdepthname);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
 		//Do attachment for the sub framebuffer
 		glBindFramebuffer(GL_FRAMEBUFFER, m_subname);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_subcolorname, 0);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_subdepthname, 0);
 
 #ifndef _NDEBUG
 		GLenum fbstatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -190,7 +284,8 @@ void Framebuffer::Destroy()
 
 	glDeleteFramebuffers(1, &m_subname);
 	glDeleteTextures(1, &m_subcolorname);
-	m_subname = m_subcolorname = 0;
+	glDeleteTextures(1, &m_subdepthname);
+	m_subname = m_subcolorname = m_subdepthname = 0;
 	m_width = m_height = 0;
 	m_samples = 0;
 }
@@ -206,7 +301,7 @@ void Framebuffer::SubColorBlit()
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_subname);
 		glBlitFramebuffer(0, 0, m_width, m_height, 0, 0,
-			m_width, m_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			m_width, m_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
 #ifdef _DEBUG
 		GLenum err = glGetError();
@@ -380,4 +475,183 @@ void Framebuffer::BindForRead()
 	{
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
 	}
+}
+
+GLuint Framebuffer::ColorTextureForRead()
+{
+	SubColorBlit();
+	return (m_samples >= 2) ? m_subcolorname : m_colorname;
+}
+
+GLuint Framebuffer::DepthTextureForRead()
+{
+	SubColorBlit();
+	return (m_samples >= 2) ? m_subdepthname : m_depthname;
+}
+
+static float ClampBloomSetting(float value)
+{
+	if (value < 0.0f)
+		return 0.0f;
+	if (value > 1.0f)
+		return 1.0f;
+	return value;
+}
+
+void BloomResources::InitShaders()
+{
+	extern const char* blitVertexSrc;
+	extern const char* bloomThresholdFragmentSrc;
+	extern const char* bloomDownsampleFragmentSrc;
+	extern const char* bloomMergeFragmentSrc;
+	extern const char* bloomCompositeFragmentSrc;
+
+	thresholdshader.AttachSource(blitVertexSrc, bloomThresholdFragmentSrc);
+	thresholdshader.Use();
+	GLint threshold_source = thresholdshader.FindUniform("heh");
+	GLint threshold_depth = thresholdshader.FindUniform("depth_source");
+	if (threshold_source != -1)
+		glUniform1i(threshold_source, 0);
+	if (threshold_depth != -1)
+		glUniform1i(threshold_depth, 2);
+	threshold_gamma = thresholdshader.FindUniform("gamma");
+	threshold_value = thresholdshader.FindUniform("bloom_threshold");
+	threshold_use_depth_mask = thresholdshader.FindUniform("use_depth_mask");
+	if (threshold_gamma == -1 || threshold_value == -1 || threshold_use_depth_mask == -1)
+		Error("BloomResources::InitShaders: Failed to find threshold uniforms!");
+
+	downsampleshader.AttachSource(blitVertexSrc, bloomDownsampleFragmentSrc);
+	downsampleshader.Use();
+	GLint downsample_source = downsampleshader.FindUniform("heh");
+	if (downsample_source != -1)
+		glUniform1i(downsample_source, 0);
+
+	mergeshader.AttachSource(blitVertexSrc, bloomMergeFragmentSrc);
+	mergeshader.Use();
+	GLint merge_cur = mergeshader.FindUniform("MergeCur");
+	GLint merge_prev = mergeshader.FindUniform("MergePrev");
+	if (merge_cur != -1)
+		glUniform1i(merge_cur, 0);
+	if (merge_prev != -1)
+		glUniform1i(merge_prev, 1);
+	merge_spread = mergeshader.FindUniform("bloomSpread");
+	if (merge_spread == -1)
+		Error("BloomResources::InitShaders: Failed to find merge spread uniform!");
+
+	compositeshader.AttachSource(blitVertexSrc, bloomCompositeFragmentSrc);
+	compositeshader.Use();
+	GLint composite_source = compositeshader.FindUniform("heh");
+	GLint composite_bloom = compositeshader.FindUniform("bloom");
+	GLint composite_scene_source = compositeshader.FindUniform("scene_source");
+	if (composite_source != -1)
+		glUniform1i(composite_source, 0);
+	if (composite_bloom != -1)
+		glUniform1i(composite_bloom, 1);
+	if (composite_scene_source != -1)
+		glUniform1i(composite_scene_source, 2);
+	composite_gamma = compositeshader.FindUniform("gamma");
+	composite_intensity = compositeshader.FindUniform("bloom_intensity");
+	if (composite_gamma == -1 || composite_intensity == -1)
+		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
+
+	ShaderProgram::ClearBinding();
+}
+
+void BloomResources::DestroyShaders()
+{
+	thresholdshader.Destroy();
+	downsampleshader.Destroy();
+	mergeshader.Destroy();
+	compositeshader.Destroy();
+}
+
+void BloomResources::DestroyFramebuffers()
+{
+	for (int i = 0; i < NUM_BLOOM_FBOS; i++)
+		framebuffers[i].Destroy();
+}
+
+Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
+	const rendering_state& render_state, float display_gamma, GLuint depth_texture)
+{
+	if (!pref_state.bloom_enabled || source == nullptr)
+		return nullptr;
+
+	int source_width = (int)source->Width();
+	int source_height = (int)source->Height();
+	if (source_width <= 0 || source_height <= 0)
+	{
+		source_width = render_state.screen_width;
+		source_height = render_state.screen_height;
+	}
+	if (source_width < 16 || source_height < 16)
+		return nullptr;
+
+	const int max_downsample_levels = NUM_BLOOM_FBOS / 2;
+	int widths[max_downsample_levels] = {};
+	int heights[max_downsample_levels] = {};
+	int downsample_count = 0;
+	int width = source_width / 2;
+	int height = source_height / 2;
+
+	while (downsample_count < max_downsample_levels && width >= 8 && height >= 8)
+	{
+		widths[downsample_count] = width;
+		heights[downsample_count] = height;
+		downsample_count++;
+		width /= 2;
+		height /= 2;
+	}
+
+	if (downsample_count == 0)
+		return nullptr;
+
+	for (int i = 0; i < downsample_count; i++)
+		framebuffers[i].Update(widths[i], heights[i], 0);
+
+	int merge_count = downsample_count - 1;
+	for (int i = 0; i < merge_count; i++)
+	{
+		int level = downsample_count - 2 - i;
+		framebuffers[downsample_count + i].Update(widths[level], heights[level], 0);
+	}
+
+	for (int i = downsample_count + merge_count; i < NUM_BLOOM_FBOS; i++)
+		framebuffers[i].Destroy();
+
+	thresholdshader.Use();
+	glUniform1f(threshold_gamma, display_gamma);
+	glUniform1f(threshold_value, ClampBloomSetting(pref_state.bloom_threshold));
+	glUniform1i(threshold_use_depth_mask, depth_texture != 0);
+	rend_ClearBoundTextures();
+	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
+	if (depth_texture != 0)
+		GL_BindFramebufferTexture(depth_texture, 2, GL_NEAREST);
+	GL_DrawFramebufferQuad(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);
+
+	downsampleshader.Use();
+	for (int i = 1; i < downsample_count; i++)
+	{
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(framebuffers[i - 1].ColorTextureForRead(), 0, GL_LINEAR);
+		GL_DrawFramebufferQuad(framebuffers[i].Handle(), 0, 0, widths[i], heights[i]);
+		downsampleshader.Use();
+	}
+
+	float bloom_spread = 0.5f + ClampBloomSetting(pref_state.bloom_spread) * 0.375f;
+	int previous_index = downsample_count - 1;
+	int output_index = downsample_count;
+	for (int level = downsample_count - 2; level >= 0; level--)
+	{
+		mergeshader.Use();
+		glUniform1f(merge_spread, bloom_spread);
+		rend_ClearBoundTextures();
+		GL_BindFramebufferTexture(framebuffers[level].ColorTextureForRead(), 0, GL_LINEAR);
+		GL_BindFramebufferTexture(framebuffers[previous_index].ColorTextureForRead(), 1, GL_LINEAR);
+		GL_DrawFramebufferQuad(framebuffers[output_index].Handle(), 0, 0, widths[level], heights[level]);
+		previous_index = output_index;
+		output_index++;
+	}
+
+	return &framebuffers[previous_index];
 }

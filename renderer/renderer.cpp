@@ -26,7 +26,7 @@
 //TODO: Remove
 renderer_type Renderer_type = RENDERER_OPENGL;
 
-opengl_profile OpenGLProfile = GLPROFILE_COMPAT;
+opengl_profile OpenGLProfile = GLPROFILE_CORE;
 static IRenderer* renderer_inst;
 
 bool Renderer_initted;
@@ -184,6 +184,14 @@ void rend_EndFrame()
 		return;
 
 	renderer_inst->EndFrame();
+}
+
+void rend_CaptureBloomSource()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->CaptureBloomSource();
 }
 
 // Draws a scaled 2d bitmap to our buffer

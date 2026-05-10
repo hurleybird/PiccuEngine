@@ -650,6 +650,8 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	if (downsampleshader_dest_origin == -1)
 		Error("GLRenderer::Init: Failed to find downsample dest_origin uniform!");
 
+	bloom.InitShaders();
+
 	//Simple shader for testing, before everything is made to use shaders.
 	extern const char* testVertexSrc;
 	extern const char* testFragmentSrc;
@@ -668,6 +670,7 @@ void GL3Renderer::Close()
 
 	blitshader.Destroy();
 	downsampleshader.Destroy();
+	bloom.DestroyShaders();
 
 	FreeImages();
 	if (framebuffer_ok)

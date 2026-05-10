@@ -295,23 +295,30 @@ void GL3Renderer::Flip()
 
 	Framebuffer* present_framebuffer = &framebuffers[framebuffer_current_draw];
 	int supersampling_factor = SupersamplingFactor();
+	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
 	if (supersampling_factor >= 4)
 	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(downscale_framebuffer.Handle(), 0, 0,
-			downscale_framebuffer.Width(), downscale_framebuffer.Height(), GL_LINEAR);
-		downscale_framebuffer.BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
+		downsampleshader.Use();
+		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
 		present_framebuffer = &resolved_framebuffer;
 	}
 	else if (supersampling_factor >= 2)
 	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
 		present_framebuffer = &resolved_framebuffer;
 	}
 
 	blitshader.Use();
-	glUniform1f(blitshader_gamma, 1.f / OpenGL_preferred_state.gamma);
+	glUniform1f(blitshader_gamma, display_gamma);
 	present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
 	ShaderProgram::ClearBinding();
 
@@ -891,24 +898,33 @@ void GL3Renderer::Screenshot(int bm_handle)
 	dest_data = bm_data(bm_handle, 0);
 
 	int supersampling_factor = SupersamplingFactor();
+	float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
 	if (supersampling_factor >= 4)
 	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(downscale_framebuffer.Handle(), 0, 0,
-			downscale_framebuffer.Width(), downscale_framebuffer.Height(), GL_LINEAR);
-		downscale_framebuffer.BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
+			downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
+		downsampleshader.Use();
+		downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
 		resolved_framebuffer.BindForRead();
 	}
 	else if (supersampling_factor >= 2)
 	{
-		framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
-			resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_LINEAR);
+		downsampleshader.Use();
+		framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
+			resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
+			downsampleshader_dest_origin);
 		resolved_framebuffer.BindForRead();
 	}
 	else
 	{
 		framebuffers[framebuffer_current_draw].BindForRead();
 	}
+	if (supersampling_factor >= 2)
+		ShaderProgram::ClearBinding();
 	glReadPixels(0, 0, OpenGL_state.screen_width, OpenGL_state.screen_height, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)temp_data);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());

@@ -18,7 +18,7 @@
 */
 #include "gl_local.h"
 
-//The number of vertex attributes the legacy code used. 
+//The number of vertex attributes the legacy code used.
 constexpr int NUM_LEGACY_VERTEX_ATTRIBS = 4;
 //The count of vertices that each buffer will store
 constexpr int NUM_VERTS_PER_BUFFER = 640000;
@@ -35,7 +35,7 @@ void GL3Renderer::RestoreLegacy()
 
 void GL3Renderer::InitPersistentDrawBuffer(size_t size)
 {
-	//Due to names becoming immutable when using buffer storage, 
+	//Due to names becoming immutable when using buffer storage,
 	//need to recycle buffers by explicitly deleting the old one. OpenGL maintains its lifetime until it is done
 	if (drawbuffer != 0)
 	{
@@ -56,7 +56,7 @@ void GL3Renderer::InitPersistentDrawBuffer(size_t size)
 #endif
 
 	//of course glVertexAttribBinding has to only be core in 4.3+
-	// because OpenGL makes only the best API design decisions at every step. 
+	// because OpenGL makes only the best API design decisions at every step.
 
 	//attrib 0: position
 	glEnableVertexAttribArray(0);
@@ -152,7 +152,7 @@ void GL3Renderer::SetDrawDefaults()
 		Error("opengl_SetDrawDefaults: Failure reading generic.vert!");
 	genericVertexBody[len] = '\0';
 	cfclose(cf);
-	
+
 	cf = cfopen("generic.frag", "rb");
 	if (!cf)
 		Error("opengl_SetDrawDefaults: Couldn't open shader source file generic.frag!");
@@ -170,7 +170,7 @@ void GL3Renderer::SetDrawDefaults()
 	drawshaders[1].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, false, false);
 	//Textured and lightmapped
 	drawshaders[2].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, false, false);
-	//Specular. 
+	//Specular.
 	drawshaders[3].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, true, false);
 
 	//With fog
@@ -180,7 +180,7 @@ void GL3Renderer::SetDrawDefaults()
 	drawshaders[5].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, false, true);
 	//Textured and lightmapped
 	drawshaders[6].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, true, false, true);
-	//Specular. 
+	//Specular.
 	drawshaders[7].AttachSourcePreprocess(genericVertexBody, genericFragBody, true, false, true, true);
 
 	lastdrawshader = -1;
@@ -573,7 +573,10 @@ void GL3Renderer::SetPixel(ddgr_color color, int x, int y)
 
 	//please do not call this function if you can avoid it.
 	int offset = CopyVertices(1);
+	GLfloat point_size = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_point_size));
+	glPointSize(point_size);
 	glDrawArrays(GL_POINTS, offset, 1);
+	glPointSize(1.0f);
 }
 
 // Sets a pixel on the display
@@ -650,7 +653,7 @@ void GL3Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	GL_vertices[0].color.a = 255;
 	GL_vertices[1].color = GL_vertices[0].color;
 
-	//hack to avoid line clipping but this isn't working correctly yet, causes one corner to vanish. 
+	//hack to avoid line clipping but this isn't working correctly yet, causes one corner to vanish.
 	GL_vertices[0].vert.x = x1 + 1.f;
 	GL_vertices[0].vert.y = y1 + 1.f;
 	GL_vertices[0].vert.z = 0;
@@ -659,7 +662,10 @@ void GL3Renderer::DrawLine(int x1, int y1, int x2, int y2)
 	GL_vertices[1].vert.z = 0;
 
 	int offset = CopyVertices(2);
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
 	glDrawArrays(GL_LINES, offset, 2);
+	glLineWidth(1.0f);
 
 	SetAlphaType(atype);
 	SetLighting(ltype);
@@ -765,7 +771,10 @@ void GL3Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 
 	SelectDrawShader();
 	int offset = CopyVertices(2);
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
 	glDrawArrays(GL_LINES, offset, 2);
+	glLineWidth(1.0f);
 }
 
 //	given a chunked bitmap, renders it.

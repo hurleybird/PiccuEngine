@@ -303,6 +303,72 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 	rend_RestoreLegacy();
 }
 
+void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
+	GLint gamma_uniform, float gamma, GLint dest_origin_uniform)
+{
+	SubColorBlit();
+
+#ifdef _DEBUG
+	GLenum err = glGetError();
+	if (err != GL_NO_ERROR)
+	{
+		mprintf((0, "Error leaving sub color blit: %d\n", err));
+	}
+#endif
+
+	glBindVertexArray(fbVAOName);
+	GLint oldviewport[4];
+	glGetIntegerv(GL_VIEWPORT, oldviewport);
+	glViewport(x, y, w, h);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+
+	if (gamma_uniform != -1)
+		glUniform1f(gamma_uniform, gamma);
+	if (dest_origin_uniform != -1)
+		glUniform2i(dest_origin_uniform, x, y);
+
+#ifdef _DEBUG
+	err = glGetError();
+	if (err != GL_NO_ERROR)
+	{
+		mprintf((0, "Error binding framebuffers: %d\n", err));
+	}
+#endif
+
+	rend_ClearBoundTextures();
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glClientActiveTextureARB(GL_TEXTURE0);
+
+	glActiveTexture(GL_TEXTURE0);
+
+	GLuint sourcename = (m_samples >= 2) ? m_subcolorname : m_colorname;
+	if (OpenGLProfile == GLPROFILE_COMPAT)
+		glEnable(GL_TEXTURE_2D);
+
+	glBindTexture(GL_TEXTURE_2D, sourcename);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+#ifdef _DEBUG
+	err = glGetError();
+	if (err != GL_NO_ERROR)
+	{
+		mprintf((0, "Error binding downsample source: %d\n", err));
+	}
+#endif
+
+	glClearColor(0.0, 0.0, 0.0, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
+
+	rend_RestoreLegacy();
+}
+
 void Framebuffer::BindForRead()
 {
 	if (m_samples >= 2)

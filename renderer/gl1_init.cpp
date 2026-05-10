@@ -361,6 +361,12 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 #endif
 	// Get some info
 	GetInformation();
+	GLfloat line_width_range[2] = {1.0f, 1.0f};
+	GLfloat point_size_range[2] = {1.0f, 1.0f};
+	glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, line_width_range);
+	glGetFloatv(GL_ALIASED_POINT_SIZE_RANGE, point_size_range);
+	max_line_width = line_width_range[1];
+	max_point_size = point_size_range[1];
 
 	// Default passthrough viewport.
 	SetViewport();
@@ -446,10 +452,27 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 
 	extern const char* blitVertexSrc;
 	extern const char* blitFragmentSrc;
+	extern const char* downsampleFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
+	blitshader.Use();
+	GLint blitshader_source = blitshader.FindUniform("heh");
+	if (blitshader_source != -1)
+		glUniform1i(blitshader_source, 0);
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("rend_Init: Failed to find gamma uniform!");
+
+	downsampleshader.AttachSource(blitVertexSrc, downsampleFragmentSrc);
+	downsampleshader.Use();
+	GLint downsampleshader_source = downsampleshader.FindUniform("heh");
+	if (downsampleshader_source != -1)
+		glUniform1i(downsampleshader_source, 0);
+	downsampleshader_gamma = downsampleshader.FindUniform("gamma");
+	if (downsampleshader_gamma == -1)
+		Error("rend_Init: Failed to find downsample gamma uniform!");
+	downsampleshader_dest_origin = downsampleshader.FindUniform("dest_origin");
+	if (downsampleshader_dest_origin == -1)
+		Error("rend_Init: Failed to find downsample dest_origin uniform!");
 
 
 	//[ISB] moved here.. stupid.
@@ -470,6 +493,7 @@ void GLCompatibilityRenderer::Close()
 	CHECK_ERROR(5);
 
 	blitshader.Destroy();
+	downsampleshader.Destroy();
 	FreeImages();
 	if (framebuffer_ok)
 		CloseFramebuffer();

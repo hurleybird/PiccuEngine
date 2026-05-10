@@ -79,9 +79,14 @@ class GL3Renderer : public IRenderer
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
 	ShaderProgram blitshader;
+	ShaderProgram downsampleshader;
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
+	GLint downsampleshader_gamma = -1;
+	GLint downsampleshader_dest_origin = -1;
+	GLfloat max_line_width = 1.0f;
+	GLfloat max_point_size = 1.0f;
 
 	int OpenGL_last_frame_polys_drawn = 0;
 	int OpenGL_last_frame_verts_processed = 0;

@@ -449,9 +449,12 @@ void GLCompatibilityRenderer::SetPixel(ddgr_color color, int x, int y)
 
 	glColor3ub(r, g, b);
 
+	GLfloat point_size = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_point_size));
+	glPointSize(point_size);
 	glBegin(GL_POINTS);
 	glVertex2i(x, y);
 	glEnd();
+	glPointSize(1.0f);
 }
 
 // Sets a pixel on the display
@@ -521,12 +524,15 @@ void GLCompatibilityRenderer::DrawLine(int x1, int y1, int x2, int y2)
 	SetTextureType(TT_FLAT);
 
 
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
 	glBegin(GL_LINES);
 	glColor4ub(r, g, b, 255);
 	glVertex2i(x1 + OpenGL_state.clip_x1, y1 + OpenGL_state.clip_y1);
 	glColor4ub(r, g, b, 255);
 	glVertex2i(x2 + OpenGL_state.clip_x1, y2 + OpenGL_state.clip_y1);
 	glEnd();
+	glLineWidth(1.0f);
 
 	SetAlphaType(atype);
 	SetLighting(ltype);
@@ -774,6 +780,8 @@ void GLCompatibilityRenderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 	alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 
 	// And draw!
+	GLfloat line_width = std::max(1.0f, std::min((GLfloat)SupersamplingFactor(), max_line_width));
+	glLineWidth(line_width);
 	glBegin(GL_LINES);
 	for (i = 0; i < 2; i++)
 	{
@@ -814,6 +822,7 @@ void GLCompatibilityRenderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 	}
 
 	glEnd();
+	glLineWidth(1.0f);
 }
 
 //	given a chunked bitmap, renders it.

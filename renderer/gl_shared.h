@@ -115,6 +115,8 @@ public:
 	//Blits to the target framebuffer using a draw. Bind desired shader before calling.
 	//Will set current read framebuffer to m_name. Will not trash viewport.
 	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter = false);
+	void DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
+		GLint gamma_uniform, float gamma, GLint dest_origin_uniform);
 
 	//When called without MSAA, just binds m_name to the read slot.
 	//When called with MSAA, will resolve to m_subname and bind that.

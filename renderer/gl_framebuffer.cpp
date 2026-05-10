@@ -336,6 +336,22 @@ void Framebuffer::BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsig
 		x, y, x + w, y + h, GL_COLOR_BUFFER_BIT, filter);
 }
 
+void Framebuffer::BlitDepthTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+{
+	SubColorBlit();
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glBlitFramebuffer(0, 0, m_width, m_height,
+		x, y, x + w, y + h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+
+#ifdef _DEBUG
+	GLenum err = glGetError();
+	if (err != GL_NO_ERROR)
+	{
+		mprintf((0, "Error blitting depth: %d\n", err));
+	}
+#endif
+}
+
 void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter)
 {
 	SubColorBlit();

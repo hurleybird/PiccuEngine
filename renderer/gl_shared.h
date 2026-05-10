@@ -112,6 +112,9 @@ public:
 	//Blits to the target framebuffer using glBlitFramebuffer.
 	//Will set current read framebuffer to m_name.
 	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter = GL_NEAREST);
+	//Blits the depth buffer to the target framebuffer with nearest-neighbor scaling.
+	//Resolves multisampling first if needed.
+	void BlitDepthTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 	//Blits to the target framebuffer using a draw. Bind desired shader before calling.
 	//Will set current read framebuffer to m_name. Will not trash viewport.
 	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter = false);

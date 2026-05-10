@@ -280,7 +280,8 @@ void GLCompatibilityRenderer::Flip(void)
 		present_framebuffer = &resolved_framebuffer;
 	}
 
-	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, 0);
+	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
+	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
 	if (bloom_framebuffer)
 	{
 		bloom.compositeshader.Use();
@@ -385,6 +386,9 @@ void GLCompatibilityRenderer::CaptureBloomSource()
 		framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
 			bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
 	}
+
+	framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
+		bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);

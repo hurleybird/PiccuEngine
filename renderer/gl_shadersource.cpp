@@ -121,7 +121,7 @@ const char* bloomThresholdFragmentSrc =
 "vec3 SampleBloom(vec2 uv, vec2 step, float x, float y)\n"
 "{\n"
 "	vec2 sampleuv = uv + step * vec2(x, y);\n"
-"	if (use_depth_mask != 0 && texture(depth_source, sampleuv).r >= 0.9999)\n"
+"	if (use_depth_mask != 0 && texture(depth_source, sampleuv).r >= 0.99999)\n"
 "		return vec3(0.0);\n"
 "	vec3 displaycolor = ToDisplay(texture(heh, sampleuv).rgb);\n"
 "	float brightness = max(max(displaycolor.r, displaycolor.g), displaycolor.b);\n"

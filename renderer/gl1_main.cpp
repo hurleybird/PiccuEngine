@@ -19,6 +19,41 @@
 #include "gl1_local.h"
 #include "rtperformance.h"
 
+int GLCompatibilityRenderer::SupersamplingFactor() const
+{
+	return RendererSupersamplingFactor(OpenGL_preferred_state);
+}
+
+int GLCompatibilityRenderer::FramebufferWidth() const
+{
+	return OpenGL_state.screen_width * SupersamplingFactor();
+}
+
+int GLCompatibilityRenderer::FramebufferHeight() const
+{
+	return OpenGL_state.screen_height * SupersamplingFactor();
+}
+
+int GLCompatibilityRenderer::ScaledX(int x) const
+{
+	return x * SupersamplingFactor();
+}
+
+int GLCompatibilityRenderer::ScaledY(int y) const
+{
+	return y * SupersamplingFactor();
+}
+
+int GLCompatibilityRenderer::ScaledW(int w) const
+{
+	return w * SupersamplingFactor();
+}
+
+int GLCompatibilityRenderer::ScaledH(int h) const
+{
+	return h * SupersamplingFactor();
+}
+
 void GLCompatibilityRenderer::UpdateWindow()
 {
 	int width, height;
@@ -82,15 +117,15 @@ void GLCompatibilityRenderer::UpdateWindow()
 
 void GLCompatibilityRenderer::SetViewport()
 {
-	//[ISB] the hardware t&l code is AWFUL and the software t&l code won't compile. 
-	// Reverting it back to only ever using passthrough. 
+	//[ISB] the hardware t&l code is AWFUL and the software t&l code won't compile.
+	// Reverting it back to only ever using passthrough.
 	// Projection
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
 	glOrtho((GLfloat)0.0f, (GLfloat)(OpenGL_preferred_state.width), (GLfloat)(OpenGL_preferred_state.height), (GLfloat)0.0f, 0.0f, 1.0f);
 
 	// Viewport
-	glViewport(0, 0, OpenGL_preferred_state.width, OpenGL_preferred_state.height);
+	glViewport(0, 0, FramebufferWidth(), FramebufferHeight());
 
 	// ModelView
 	glMatrixMode(GL_MODELVIEW);
@@ -125,7 +160,9 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 
 		if (pref_state->width != OpenGL_state.screen_width || pref_state->height != OpenGL_state.screen_height
 			|| pref_state->window_width != OpenGL_state.view_width || pref_state->window_height != OpenGL_state.view_height
-			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised)
+			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
+			|| pref_state->supersampling_factor != old_state.supersampling_factor
+			|| pref_state->msaa_samples != old_state.msaa_samples)
 		{
 			UpdateWindow();
 			SetViewport();
@@ -169,6 +206,10 @@ void GLCompatibilityRenderer::StartFrame(int x1, int y1, int x2, int y2, int cle
 	{
 		glClear(GL_DEPTH_BUFFER_BIT);
 	}
+	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
 	OpenGL_state.clip_x1 = x1;
 	OpenGL_state.clip_y1 = y1;
 	OpenGL_state.clip_x2 = x2;
@@ -210,9 +251,23 @@ void GLCompatibilityRenderer::Flip(void)
 	OpenGL_polys_drawn = 0;
 	OpenGL_verts_processed = 0;
 
-	//[ISB] remove the BlitToRaw call so I can hack around drivers that do things like forced antialiasing that cause an otherwise valid operation to stop working. 
+	//[ISB] remove the BlitToRaw call so I can hack around drivers that do things like forced antialiasing that cause an otherwise valid operation to stop working.
 	blitshader.Use();
-	framebuffers[framebuffer_current_draw].BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
+	{
+		glUniform1f(blitshader_gamma, 1.f);
+		glUniform1i(blitshader_resolve_samples, 2);
+		framebuffers[framebuffer_current_draw].BlitTo(downscale_framebuffer.Handle(), 0, 0,
+			FramebufferWidth() / 2, FramebufferHeight() / 2, false);
+		glUniform1f(blitshader_gamma, 1.f / OpenGL_preferred_state.gamma);
+		downscale_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+	}
+	else
+	{
+		glUniform1i(blitshader_resolve_samples, SupersamplingFactor() > 1 ? 2 : 1);
+		framebuffers[framebuffer_current_draw].BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h,
+			false);
+	}
 	ShaderProgram::ClearBinding();
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -227,7 +282,7 @@ void GLCompatibilityRenderer::Flip(void)
 
 #if defined(SDL3)
 	SDL_GL_SwapWindow(GLWindow);
-#elif defined(WIN32)	
+#elif defined(WIN32)
 	SwapBuffers((HDC)hOpenGLDC);
 #elif defined(__LINUX__)
 	SDL_GL_SwapBuffers();
@@ -383,7 +438,7 @@ void GLCompatibilityRenderer::SetZBufferState(sbyte state)
 	OpenGL_sets_this_frame[5]++;
 	OpenGL_state.cur_zbuffer_state = state;
 
-	//	mprintf ((0,"OPENGL: Setting zbuffer state to %d.\n",state)); 
+	//	mprintf ((0,"OPENGL: Setting zbuffer state to %d.\n",state));
 
 	if (state)
 	{
@@ -608,7 +663,7 @@ void GLCompatibilityRenderer::SetAlphaType(sbyte atype)
 		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
 		glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_RGB, GL_TEXTURE);
 		glTexEnvi(GL_TEXTURE_ENV, GL_SRC1_RGB, GL_PRIMARY_COLOR);
-		//I'm not sure why this works? The terminal switches in level 1 use a alpha texture and it works fine in D3D. 
+		//I'm not sure why this works? The terminal switches in level 1 use a alpha texture and it works fine in D3D.
 		glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
 		glTexEnvi(GL_TEXTURE_ENV, GL_SRC0_ALPHA, GL_PRIMARY_COLOR);
 		break;
@@ -900,11 +955,19 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 {
 	for (int i = 0; i < NUM_GL1_FBOS; i++)
 	{
-		framebuffers[i].Update(OpenGL_state.screen_width, OpenGL_state.screen_height, OpenGL_preferred_state.antialised);
+		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
 	}
+	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
+		downscale_framebuffer.Update(FramebufferWidth() / 2, FramebufferHeight() / 2, 0);
+	else
+		downscale_framebuffer.Destroy();
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
+	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
@@ -917,6 +980,7 @@ void GLCompatibilityRenderer::CloseFramebuffer(void)
 	{
 		framebuffers[i].Destroy();
 	}
+	downscale_framebuffer.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

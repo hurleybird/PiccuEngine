@@ -542,14 +542,14 @@ void GL3Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 	y1 += OpenGL_state.clip_y1;
 
 	glEnable(GL_SCISSOR_TEST);
-	glScissor(x1, OpenGL_state.screen_height - (height + y1), width, height);
+	glScissor(ScaledX(x1), FramebufferHeight() - ScaledY(height + y1), ScaledW(width), ScaledH(height));
 	glClearColor((float)r / 255.0, (float)g / 255.0, (float)b / 255.0, 0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	width = OpenGL_state.clip_x2 - OpenGL_state.clip_x1;
 	height = OpenGL_state.clip_y2 - OpenGL_state.clip_y1;
 
-	glScissor(OpenGL_state.clip_x1, OpenGL_state.screen_height - (OpenGL_state.clip_y1 + height), width, height);
+	glScissor(ScaledX(OpenGL_state.clip_x1), FramebufferHeight() - ScaledY(OpenGL_state.clip_y1 + height), ScaledW(width), ScaledH(height));
 	glDisable(GL_SCISSOR_TEST);
 }
 
@@ -580,7 +580,7 @@ void GL3Renderer::SetPixel(ddgr_color color, int x, int y)
 ddgr_color GL3Renderer::GetPixel(int x, int y)
 {
 	ddgr_color color[4];
-	glReadPixels(x, (OpenGL_state.screen_height - 1) - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)color);
+	glReadPixels(ScaledX(x), FramebufferHeight() - 1 - ScaledY(y), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, (GLvoid*)color);
 	return color[0];
 }
 

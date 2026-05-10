@@ -173,7 +173,7 @@ static GLADapiproc opengl_GLADLoad(const char* name)
 	return (GLADapiproc)ptr;
 }
 
-// Check for OpenGL support, 
+// Check for OpenGL support,
 int GLCompatibilityRenderer::Setup(HDC glhdc)
 {
 	// Finds an acceptable pixel format to render to
@@ -186,7 +186,7 @@ int GLCompatibilityRenderer::Setup(HDC glhdc)
 	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_GENERIC_ACCELERATED;
 	pfd.iPixelType = PFD_TYPE_RGBA;
 
-	// Find the user's "best match" PFD 
+	// Find the user's "best match" PFD
 	pf = ChoosePixelFormat(glhdc, &pfd);
 	if (pf == 0)
 	{
@@ -362,7 +362,7 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	// Get some info
 	GetInformation();
 
-	// Default passthrough viewport. 
+	// Default passthrough viewport.
 	SetViewport();
 
 	framebuffer_ok = false;
@@ -450,9 +450,12 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("rend_Init: Failed to find gamma uniform!");
+	blitshader_resolve_samples = blitshader.FindUniform("resolve_samples");
+	if (blitshader_resolve_samples == -1)
+		Error("rend_Init: Failed to find resolve_samples uniform!");
 
 
-	//[ISB] moved here.. stupid. 
+	//[ISB] moved here.. stupid.
 	SetGammaValue(OpenGL_preferred_state.gamma);
 
 #ifdef _DEBUG

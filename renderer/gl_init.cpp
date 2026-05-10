@@ -124,7 +124,7 @@ int GL3Renderer::Setup(SDL_Window* window)
 	GLWindow = window;
 
 	//These are supposed to be before creating a window, but atm they're here. This seems to work on Windows at least.
-	//Need more time to figure out how compatibile this is.. or just make the decision before the first window is initialized. 
+	//Need more time to figure out how compatibile this is.. or just make the decision before the first window is initialized.
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -250,7 +250,7 @@ bool GL_GetWGLExtensionProcs()
 	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_GENERIC_ACCELERATED;
 	pfd.iPixelType = PFD_TYPE_RGBA;
 
-	// Find the user's "best match" PFD 
+	// Find the user's "best match" PFD
 	pf = ChoosePixelFormat(DummyDC, &pfd);
 	if (pf == 0)
 	{
@@ -350,7 +350,7 @@ int GL3Renderer::Setup(HDC glhdc)
 	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER | PFD_GENERIC_ACCELERATED;
 	pfd.iPixelType = PFD_TYPE_RGBA;
 
-	// Find the user's "best match" PFD 
+	// Find the user's "best match" PFD
 	pf = ChoosePixelFormat(glhdc, &pfd);
 	if (pf == 0)
 	{
@@ -402,7 +402,7 @@ int GL3Renderer::Setup(HDC glhdc)
 	// Create an OpenGL context, and make it the current context
 	//ResourceContext = wglCreateContext((HDC)glhdc);
 	ResourceContext = dwglCreateContextAttribsARB((HDC)glhdc, nullptr, attribs);
-	if (ResourceContext == NULL) 
+	if (ResourceContext == NULL)
 	{
 		DWORD ret = GetLastError();
 		//FreeLibrary(opengl_dll_handle);
@@ -564,7 +564,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	// Get some info
 	GetInformation();
 
-	//Initialize the common buffer that will be shared across shaders. 
+	//Initialize the common buffer that will be shared across shaders.
 	InitShaders();
 
 	framebuffer_ok = false;
@@ -594,7 +594,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	SetUploadBufferSize(256, 256);
 	SetDefaults();
 
-	// Default passthrough viewport. 
+	// Default passthrough viewport.
 	SetViewport();
 
 	//g3_ForceTransformRefresh();
@@ -626,13 +626,16 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("GLRenderer::Init: Failed to find gamma uniform!");
+	blitshader_resolve_samples = blitshader.FindUniform("resolve_samples");
+	if (blitshader_resolve_samples == -1)
+		Error("GLRenderer::Init: Failed to find resolve_samples uniform!");
 
-	//Simple shader for testing, before everything is made to use shaders. 
+	//Simple shader for testing, before everything is made to use shaders.
 	extern const char* testVertexSrc;
 	extern const char* testFragmentSrc;
 	testshader.AttachSource(testVertexSrc, testFragmentSrc);
 
-	//[ISB] moved here.. stupid. 
+	//[ISB] moved here.. stupid.
 	SetGammaValue(OpenGL_preferred_state.gamma);
 
 	return retval;

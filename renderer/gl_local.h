@@ -72,14 +72,16 @@ class GL3Renderer : public IRenderer
 	bool Fast_test_render = false;
 
 	Framebuffer framebuffers[NUM_GL3_FBOS];
+	Framebuffer downscale_framebuffer;
 	int framebuffer_current_draw = 0;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
 	ShaderProgram blitshader;
-	//Temp shader to test the shader systems. 
+	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
+	GLint blitshader_resolve_samples = -1;
 
 	int OpenGL_last_frame_polys_drawn = 0;
 	int OpenGL_last_frame_verts_processed = 0;
@@ -154,7 +156,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0 };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0 };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -173,7 +175,7 @@ class GL3Renderer : public IRenderer
 	// The font characteristics
 	float rend_FontRed[4], rend_FontBlue[4], rend_FontGreen[4], rend_FontAlpha[4];
 
-	//if false, never, ever do anything with framebuffers while I try to get out of here. 
+	//if false, never, ever do anything with framebuffers while I try to get out of here.
 	bool framebuffer_ok = false;
 
 private:
@@ -217,6 +219,13 @@ private:
 	void CloseFramebuffer();
 	void SetViewport();
 	void UpdateWindow();
+	int SupersamplingFactor() const;
+	int FramebufferWidth() const;
+	int FramebufferHeight() const;
+	int ScaledX(int x) const;
+	int ScaledY(int y) const;
+	int ScaledW(int w) const;
+	int ScaledH(int h) const;
 	void SetAlwaysAlpha(bool state);
 	float GetAlphaMultiplier();
 
@@ -328,7 +337,7 @@ public:
 	void GetRenderState(rendering_state* rstate) override;
 
 	// Fills in the passed in pointer with the current rendering state
-	// Uses legacy structure for compatibiltity with current DLLs. 
+	// Uses legacy structure for compatibiltity with current DLLs.
 	void DLLGetRenderState(DLLrendering_state* rstate) override;
 
 	// Returns 1 if there is mid video memory, 2 if there is low vid memory, or 0 if there is large vid memory

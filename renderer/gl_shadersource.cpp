@@ -40,15 +40,29 @@ const char* blitFragmentSrc =
 "\n "
 "uniform sampler2D heh;\n"
 "uniform float gamma;\n"
+"uniform int resolve_samples;\n"
 "\n"
 "void main()\n"
 "{\n"
-"vec4 sourcecolor = texture(heh, outuv);\n"
+"vec4 sourcecolor;\n"
+"if (resolve_samples >= 2)\n"
+"{\n"
+"	vec2 texel = 1.0 / vec2(textureSize(heh, 0));\n"
+"	sourcecolor = texture(heh, outuv + texel * vec2(-0.5, -0.5));\n"
+"	sourcecolor += texture(heh, outuv + texel * vec2(0.5, -0.5));\n"
+"	sourcecolor += texture(heh, outuv + texel * vec2(-0.5, 0.5));\n"
+"	sourcecolor += texture(heh, outuv + texel * vec2(0.5, 0.5));\n"
+"	sourcecolor *= 0.25;\n"
+"}\n"
+"else\n"
+"{\n"
+"	sourcecolor = texture(heh, outuv);\n"
+"}\n"
 "color = vec4(pow(sourcecolor.rgb, vec3(gamma)), sourcecolor.a);\n"
 "}\n"
 "";
 
-const char* testVertexSrc = 
+const char* testVertexSrc =
 "#version 330 core\n"
 "\n"
 "layout(std140) uniform CommonBlock\n"
@@ -73,7 +87,7 @@ const char* testVertexSrc =
 "}\n"
 "";
 
-const char* testFragmentSrc = 
+const char* testFragmentSrc =
 "#version 330 core\n"
 "\n"
 "uniform sampler2D colortexture;\n"

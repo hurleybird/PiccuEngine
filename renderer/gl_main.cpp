@@ -25,6 +25,41 @@ static float mat4_identity[16] =
 	0, 0, 1, 0,
 	0, 0, 0, 1 };
 
+int GL3Renderer::SupersamplingFactor() const
+{
+	return RendererSupersamplingFactor(OpenGL_preferred_state);
+}
+
+int GL3Renderer::FramebufferWidth() const
+{
+	return OpenGL_state.screen_width * SupersamplingFactor();
+}
+
+int GL3Renderer::FramebufferHeight() const
+{
+	return OpenGL_state.screen_height * SupersamplingFactor();
+}
+
+int GL3Renderer::ScaledX(int x) const
+{
+	return x * SupersamplingFactor();
+}
+
+int GL3Renderer::ScaledY(int y) const
+{
+	return y * SupersamplingFactor();
+}
+
+int GL3Renderer::ScaledW(int w) const
+{
+	return w * SupersamplingFactor();
+}
+
+int GL3Renderer::ScaledH(int h) const
+{
+	return h * SupersamplingFactor();
+}
+
 
 void GL_Ortho(float* mat, float left, float right, float bottom, float top, float znear, float zfar)
 {
@@ -101,8 +136,8 @@ void GL3Renderer::UpdateWindow()
 
 void GL3Renderer::SetViewport()
 {
-	//[ISB] the hardware t&l code is AWFUL and the software t&l code won't compile. 
-	// Reverting it back to only ever using passthrough. 
+	//[ISB] the hardware t&l code is AWFUL and the software t&l code won't compile.
+	// Reverting it back to only ever using passthrough.
 	// Projection
 	//glMatrixMode(GL_PROJECTION);
 	//glLoadIdentity();
@@ -120,7 +155,7 @@ void GL3Renderer::SetViewport()
 
 	UpdateLegacyBlock(projection, mat4_identity);
 	// Viewport
-	glViewport(0, 0, OpenGL_preferred_state.width, OpenGL_preferred_state.height);
+	glViewport(0, 0, FramebufferWidth(), FramebufferHeight());
 
 	// ModelView
 	//glMatrixMode(GL_MODELVIEW);
@@ -155,7 +190,9 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 		if (pref_state->width != OpenGL_state.screen_width || pref_state->height != OpenGL_state.screen_height
 			|| pref_state->window_width != OpenGL_state.view_width || pref_state->window_height != OpenGL_state.view_height
-			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised)
+			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
+			|| pref_state->supersampling_factor != old_state.supersampling_factor
+			|| pref_state->msaa_samples != old_state.msaa_samples)
 		{
 			UpdateWindow();
 			SetViewport();
@@ -196,7 +233,7 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	GLenum glclearflags = 0;
 	if (clear_flags & RF_CLEAR_ZBUFFER)
 		glclearflags |= GL_DEPTH_BUFFER_BIT;
-	
+
 	if (clear_flags & RF_CLEAR_COLOR)
 	{
 		glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -205,20 +242,24 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 
 	if (glclearflags != 0)
 		glClear(glclearflags);
+	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
 
 	OpenGL_state.clip_x1 = x1;
 	OpenGL_state.clip_y1 = y1;
 	OpenGL_state.clip_x2 = x2;
 	OpenGL_state.clip_y2 = y2;
 
-	//[ISB] Use the viewport to constrain the clipping window so that the new hardware code 
+	//[ISB] Use the viewport to constrain the clipping window so that the new hardware code
 	//can work with the legacy code.
 	float projection[16];
 	GL_Ortho(projection, 0, x2 - x1, y2 - y1, 0, 0, 1);
 
 	UpdateLegacyBlock(projection, mat4_identity);
 
-	glViewport(x1, OpenGL_state.screen_height - y2, x2 - x1, y2 - y1);
+	glViewport(ScaledX(x1), FramebufferHeight() - ScaledY(y2), ScaledW(x2 - x1), ScaledH(y2 - y1));
 }
 
 // Flips the screen
@@ -252,11 +293,25 @@ void GL3Renderer::Flip()
 	OpenGL_polys_drawn = 0;
 	OpenGL_verts_processed = 0;
 
-	//[ISB] remove the BlitToRaw call so I can hack around drivers that do things like forced antialiasing that cause an otherwise valid operation to stop working. 
+	//[ISB] remove the BlitToRaw call so I can hack around drivers that do things like forced antialiasing that cause an otherwise valid operation to stop working.
 	blitshader.Use();
-	framebuffers[framebuffer_current_draw].BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
+	{
+		glUniform1f(blitshader_gamma, 1.f);
+		glUniform1i(blitshader_resolve_samples, 2);
+		framebuffers[framebuffer_current_draw].BlitTo(downscale_framebuffer.Handle(), 0, 0,
+			FramebufferWidth() / 2, FramebufferHeight() / 2, false);
+		glUniform1f(blitshader_gamma, 1.f / OpenGL_preferred_state.gamma);
+		downscale_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+	}
+	else
+	{
+		glUniform1i(blitshader_resolve_samples, SupersamplingFactor() > 1 ? 2 : 1);
+		framebuffers[framebuffer_current_draw].BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h,
+			false);
+	}
 	ShaderProgram::ClearBinding();
-	
+
 	UseDrawVAO();
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -271,7 +326,7 @@ void GL3Renderer::Flip()
 
 #if defined(SDL3)
 	SDL_GL_SwapWindow(GLWindow);
-#elif defined(WIN32)	
+#elif defined(WIN32)
 	SwapBuffers((HDC)hOpenGLDC);
 #elif defined(__LINUX__)
 	SDL_GL_SwapBuffers();
@@ -458,7 +513,7 @@ void GL3Renderer::SetZBufferState(sbyte state)
 	OpenGL_sets_this_frame[5]++;
 	OpenGL_state.cur_zbuffer_state = state;
 
-	//	mprintf ((0,"OPENGL: Setting zbuffer state to %d.\n",state)); 
+	//	mprintf ((0,"OPENGL: Setting zbuffer state to %d.\n",state));
 
 	if (state)
 	{
@@ -857,11 +912,19 @@ void GL3Renderer::UpdateFramebuffer(void)
 {
 	for (int i = 0; i < NUM_GL3_FBOS; i++)
 	{
-		framebuffers[i].Update(OpenGL_state.screen_width, OpenGL_state.screen_height, OpenGL_preferred_state.antialised);
+		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
 	}
+	if (RendererUsesTwoPassSupersampling(OpenGL_preferred_state))
+		downscale_framebuffer.Update(FramebufferWidth() / 2, FramebufferHeight() / 2, 0);
+	else
+		downscale_framebuffer.Destroy();
 
 	framebuffer_current_draw = 0;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[0].Handle());
+	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
+		glEnable(GL_MULTISAMPLE);
+	else
+		glDisable(GL_MULTISAMPLE);
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
@@ -874,6 +937,7 @@ void GL3Renderer::CloseFramebuffer(void)
 	{
 		framebuffers[i].Destroy();
 	}
+	downscale_framebuffer.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

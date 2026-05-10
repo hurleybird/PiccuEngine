@@ -295,6 +295,12 @@ int GetScreenMode()
 	return Screen_mode;
 }
 
+static void NormalizeRenderScaleSettings()
+{
+	int factor = ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
+	Render_preferred_state.supersampling_factor = (ubyte)factor;
+}
+
 //	use to sync to debug break handlers
 int rend_initted = 0;
 int Low_vidmem = 0;
@@ -347,6 +353,7 @@ void SetScreenMode(int sm, bool force_res_change)
 	else
 	{
 		int scr_width, scr_height, scr_bitdepth;
+		NormalizeRenderScaleSettings();
 
 		if (sm == SM_GAME)
 		{
@@ -408,7 +415,8 @@ void SetScreenMode(int sm, bool force_res_change)
 			if (rend_width != scr_width || rend_height != scr_height
 				|| Game_window_res_width != Render_preferred_state.window_width
 				|| Game_window_res_height != Render_preferred_state.window_height
-				|| Game_fullscreen != Render_preferred_state.fullscreen)
+				|| Game_fullscreen != Render_preferred_state.fullscreen
+				|| force_res_change)
 			{
 				Render_preferred_state.width = scr_width;
 				Render_preferred_state.height = scr_height;

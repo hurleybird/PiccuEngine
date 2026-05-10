@@ -112,6 +112,82 @@ tGameToggles Game_toggles =
 
 int DesiredOpenGLProfile = GLPROFILE_COMPAT; //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 
+int ConfigNormalizeSupersamplingFactor(int factor)
+{
+	if (factor >= 4)
+		return 4;
+	if (factor >= 2)
+		return 2;
+	return 1;
+}
+
+static int SupersamplingFactorToIndex(int factor)
+{
+	switch (ConfigNormalizeSupersamplingFactor(factor))
+	{
+	case 2:
+		return 1;
+	case 4:
+		return 2;
+	default:
+		return 0;
+	}
+}
+
+static int SupersamplingIndexToFactor(int index)
+{
+	switch (index)
+	{
+	case 1:
+		return 2;
+	case 2:
+		return 4;
+	default:
+		return 1;
+	}
+}
+
+static int NormalizeMsaaSamples(int samples)
+{
+	if (samples >= 8)
+		return 8;
+	if (samples >= 4)
+		return 4;
+	if (samples >= 2)
+		return 2;
+	return 0;
+}
+
+static int MsaaSamplesToIndex(int samples)
+{
+	switch (NormalizeMsaaSamples(samples))
+	{
+	case 2:
+		return 1;
+	case 4:
+		return 2;
+	case 8:
+		return 3;
+	default:
+		return 0;
+	}
+}
+
+static int MsaaIndexToSamples(int index)
+{
+	switch (index)
+	{
+	case 1:
+		return 2;
+	case 2:
+		return 4;
+	case 3:
+		return 8;
+	default:
+		return 0;
+	}
+}
+
 #define IDV_VCONFIG			12	//video config
 #define IDV_GCONFIG			13	//general config
 #define IDV_SCONFIG			14	//audio config
@@ -503,6 +579,7 @@ struct video_menu
 	char* buffer;
 	bool* fullscreen;
 	int* antialiasing;
+	int* supersampling;
 	int* backend;
 
 	int window_width, window_height;
@@ -542,11 +619,19 @@ struct video_menu
 		sheet->AddText("");
 		sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
-		sheet->NewGroup("Antialiasing", 184, 0);
-		int iTemp = Render_preferred_state.antialised ? 1 : 0;
+		sheet->NewGroup("MSAA", 184, 0);
+		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
 		antialiasing = sheet->AddFirstRadioButton(TXT_OFF);
-		sheet->AddRadioButton(TXT_ON);
+		sheet->AddRadioButton("2x");
+		sheet->AddRadioButton("4x");
+		sheet->AddRadioButton("8x");
 		*antialiasing = iTemp;
+
+		sheet->NewGroup("Supersampling", 184, 110);
+		supersampling = sheet->AddFirstRadioButton(TXT_OFF);
+		sheet->AddRadioButton("2x");
+		sheet->AddRadioButton("4x");
+		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
 		return sheet;
 	};
@@ -554,6 +639,8 @@ struct video_menu
 	// retreive values from property sheet here.
 	void finish()
 	{
+		const int old_supersampling = ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
+
 		if (filtering)
 			Render_preferred_state.filtering = (*filtering) ? 1 : 0;
 		if (mipmapping)
@@ -561,10 +648,15 @@ struct video_menu
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)
-			Render_preferred_state.antialised = !!*antialiasing;
+		{
+			Render_preferred_state.msaa_samples = (ubyte)MsaaIndexToSamples(*antialiasing);
+			Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
+		}
+		if (supersampling)
+			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
 
-		//Hopefully this doesn't do anything cursed..
-		rend_SetPreferredState(&Render_preferred_state);
+		const bool supersampling_changed =
+			old_supersampling != ConfigNormalizeSupersamplingFactor(Render_preferred_state.supersampling_factor);
 
 		Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
 		if (Render_FOV != Render_FOV_desired)
@@ -579,7 +671,17 @@ struct video_menu
 			Game_window_res_height = window_height;
 
 			SetScreenMode(GetScreenMode(), true);
-			Current_pilot.set_hud_data(NULL, NULL, NULL, &window_width, &window_height);
+			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+		}
+		else if (supersampling_changed)
+		{
+			SetScreenMode(GetScreenMode(), true);
+			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
+		}
+		else
+		{
+			//Hopefully this doesn't do anything cursed..
+			rend_SetPreferredState(&Render_preferred_state);
 		}
 
 		if (backend)

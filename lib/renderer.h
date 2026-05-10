@@ -239,6 +239,8 @@ struct renderer_preferred_state
 
 	ubyte vsync_on;
 	bool fullscreen; //Informs the window system that fullscreen should be used. 
+	ubyte supersampling_factor; //1, 2, or 4. Values above 1 render larger than the window and downscale.
+	ubyte msaa_samples; //0, 2, 4, or 8.
 };
 
 struct renderer_lfb

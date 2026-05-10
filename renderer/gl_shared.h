@@ -18,17 +18,17 @@
 */
 
 //gl_shared.h
-//Things shared by both the compatibility and core implementations. 
+//Things shared by both the compatibility and core implementations.
 
 #pragma once
 #include <glad/gl.h>
 #include "pserror.h"
 
-//uncomment to express your love for the best graphics API ever designed and enable extra error checking to show your love. 
+//uncomment to express your love for the best graphics API ever designed and enable extra error checking to show your love.
 //#define I_LOVE_OPENGL
 
 #ifdef I_LOVE_OPENGL
-constexpr void CHECK_ERROR(int n) //need to decide what it does. 
+constexpr void CHECK_ERROR(int n) //need to decide what it does.
 {
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -76,17 +76,17 @@ public:
 
 	void AttachSource(const char* vertexsource, const char* fragsource);
 	void AttachSourceFromDefiniton(ShaderDefinition& def);
-	//Attaches strings with some preprocessor statements. 
+	//Attaches strings with some preprocessor statements.
 	//Defines USE_TEXTURING if textured is true.
 	//Defines USE_LIGHTMAP if lightmapped is true.
-	//Defines USE_SPECULAR if speculared is true. 
+	//Defines USE_SPECULAR if speculared is true.
 	void AttachSourcePreprocess(const char* vertexsource, const char* fragsource, bool textured, bool lightmapped, bool speculared, bool fogged);
 	GLint FindUniform(const char* uniform);
 	void Destroy();
 
 	void Use();
 
-	//Replacement for glUseProgram(0) that nulls the last binding. 
+	//Replacement for glUseProgram(0) that nulls the last binding.
 	static void ClearBinding();
 
 	GLuint Handle() const
@@ -100,24 +100,24 @@ class Framebuffer
 	GLuint		m_name, m_subname;
 	GLuint		m_colorname, m_subcolorname, m_depthname;
 	uint32_t	m_width, m_height;
-	bool		m_msaa;
+	uint32_t	m_samples;
 
 	//Used when multisampling is enabled. Blits the multisample framebuffer to the non-multisample sub framebuffer
-	//Leaves the sub framebuffer bound for reading to finish the blit. 
+	//Leaves the sub framebuffer bound for reading to finish the blit.
 	void SubColorBlit();
 public:
 	Framebuffer();
-	void Update(int width, int height, bool msaa);
+	void Update(int width, int height, int msaa_samples);
 	void Destroy();
 	//Blits to the target framebuffer using glBlitFramebuffer.
 	//Will set current read framebuffer to m_name.
 	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
-	//Blits to the target framebuffer using a draw. Bind desired shader before calling. 
-	//Will set current read framebuffer to m_name. Will not trash viewport. 
-	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+	//Blits to the target framebuffer using a draw. Bind desired shader before calling.
+	//Will set current read framebuffer to m_name. Will not trash viewport.
+	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter = false);
 
 	//When called without MSAA, just binds m_name to the read slot.
-	//When called with MSAA, will resolve to m_subname and bind that. 
+	//When called with MSAA, will resolve to m_subname and bind that.
 	void BindForRead();
 
 	GLuint Handle() const
@@ -125,6 +125,31 @@ public:
 		return m_name;
 	}
 };
+
+inline bool RendererUsesTwoPassSupersampling(const renderer_preferred_state& state)
+{
+	return state.supersampling_factor >= 4;
+}
+
+inline int RendererSupersamplingFactor(const renderer_preferred_state& state)
+{
+	if (state.supersampling_factor >= 4)
+		return 4;
+	if (state.supersampling_factor >= 2)
+		return 2;
+	return 1;
+}
+
+inline int RendererMsaaSamples(const renderer_preferred_state& state)
+{
+	if (state.msaa_samples >= 8)
+		return 8;
+	if (state.msaa_samples >= 4)
+		return 4;
+	if (state.msaa_samples >= 2)
+		return 2;
+	return state.antialised ? 4 : 0;
+}
 
 #if defined(WIN32) && !defined(SDL3)
 extern PFNWGLSWAPINTERVALEXTPROC dwglSwapIntervalEXT;

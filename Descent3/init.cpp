@@ -362,6 +362,8 @@ void SaveGameSettings()
 	sprintf(tempbuffer,"%f",Detail_settings.Terrain_render_distance/((float)TERRAIN_SIZE));
 	Database->write("RS_terraindist",tempbuffer,strlen(tempbuffer)+1);
 	Database->write("RS_antialiased", Render_preferred_state.antialised);
+	Database->write("RS_msaa_samples", Render_preferred_state.msaa_samples);
+	Database->write("RS_supersampling", Render_preferred_state.supersampling_factor);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -472,6 +474,9 @@ void LoadGameSettings()
 	Default_player_terrain_leveling = 2;
 	Default_player_room_leveling = 2;
 	Render_preferred_state.gamma = 1.0;
+	Render_preferred_state.antialised = false;
+	Render_preferred_state.msaa_samples = 0;
+	Render_preferred_state.supersampling_factor = 1;
 	PreferredRenderer = RENDERER_NONE;
 
 
@@ -559,6 +564,21 @@ void LoadGameSettings()
 	Database->read_int("RS_light",&Render_state.cur_light_state);
 	Database->read_int("RS_texture_quality",&Render_state.cur_texture_quality);
 	Database->read("RS_antialiased", &Render_preferred_state.antialised);
+	Render_preferred_state.msaa_samples = Render_preferred_state.antialised ? 4 : 0;
+	tempint = Render_preferred_state.msaa_samples;
+	Database->read_int("RS_msaa_samples", &tempint);
+	if (tempint >= 8)
+		Render_preferred_state.msaa_samples = 8;
+	else if (tempint >= 4)
+		Render_preferred_state.msaa_samples = 4;
+	else if (tempint >= 2)
+		Render_preferred_state.msaa_samples = 2;
+	else
+		Render_preferred_state.msaa_samples = 0;
+	Render_preferred_state.antialised = Render_preferred_state.msaa_samples > 0;
+	tempint = Render_preferred_state.supersampling_factor;
+	Database->read_int("RS_supersampling", &tempint);
+	Render_preferred_state.supersampling_factor = (ubyte)ConfigNormalizeSupersamplingFactor(tempint);
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);

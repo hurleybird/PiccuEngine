@@ -1256,6 +1256,7 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 	int red_limit = 31;
 	int green_limit = 31;
 	int blue_limit = 31;
+	const bool per_pixel_room_lighting = UsePerPixelRoomLighting();
 
 	for (i = 0; i < num_faces; i++)
 	{
@@ -1265,19 +1266,23 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 		ASSERT(Rooms[facelist[i].room_index].used);
 		ASSERT(facelist[i].face_index < Rooms[facelist[i].room_index].num_faces);
 
-		// Make sure face was rendered
-		if (fp->renderframe != ((FrameCount - 1) % 256))
-			continue;
-
-		if (Num_dynamic_faces >= MAX_DYNAMIC_FACES)
-		{
-			mprintf((0, "Too many dynamic faces!\n"));
-			return;
-		}
-
 		// Make sure there already is a lightmap for this face
 		if (!(fp->flags & FF_LIGHTMAP))
 			continue;
+
+		// CPU dynamic lightmaps are only built for faces seen last frame.  Per-pixel lighting
+		// is resolved at draw time, so include every candidate face to avoid one-frame light pops.
+		if (!per_pixel_room_lighting)
+		{
+			if (fp->renderframe != ((FrameCount - 1) % 256))
+				continue;
+
+			if (Num_dynamic_faces >= MAX_DYNAMIC_FACES)
+			{
+				mprintf((0, "Too many dynamic faces!\n"));
+				return;
+			}
+		}
 
 		if (Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8)))
 			continue;
@@ -1317,6 +1322,21 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 
 			if (!in_front)	// This face is completely behind, so bail!
 				continue;
+		}
+
+		if (per_pixel_room_lighting)
+		{
+			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
+				light_direction, dot_range);
+
+			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
+			{
+				lmilist[num_spoken_for] = fp->lmi_handle;
+				Lmi_spoken_for[fp->lmi_handle / 8] |= (1 << (fp->lmi_handle % 8));
+				num_spoken_for++;
+			}
+
+			continue;
 		}
 
 		/*// Check for specular lighting changes on this face
@@ -1371,21 +1391,6 @@ void ApplyLightingToRooms(vector* pos, int roomnum, float light_dist, float red_
 
 		ASSERT(width > 0);
 		ASSERT(height > 0);
-
-		if (UsePerPixelRoomLighting())
-		{
-			AddPerPixelLightmapLight(fp->lmi_handle, pos, light_dist, red_scale, green_scale, blue_scale,
-				light_direction, dot_range);
-
-			if (!(Lmi_spoken_for[fp->lmi_handle / 8] & (1 << (fp->lmi_handle % 8))))
-			{
-				lmilist[num_spoken_for] = fp->lmi_handle;
-				Lmi_spoken_for[fp->lmi_handle / 8] |= (1 << (fp->lmi_handle % 8));
-				num_spoken_for++;
-			}
-
-			continue;
-		}
 
 		if (lmi_ptr->dynamic != BAD_LM_INDEX)		// already lit, so just adjust, not start over
 		{

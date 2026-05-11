@@ -1344,6 +1344,19 @@ void RenderFloatingTrig(room* rp, face* fp)\
 #endif	//ifdef EDITOR
 
 float Specular_scalars[4] = { 1.0f,.66f,.33f,.25f };
+static bool FaceHasSmoothSpecularNormals(face* fp)
+{
+	return fp->special_handle != BAD_SPECIAL_FACE_INDEX &&
+		(SpecialFaces[fp->special_handle].flags & SFF_SPEC_SMOOTH) &&
+		SpecialFaces[fp->special_handle].vertnorms != nullptr;
+}
+
+static bool UseSmoothSpecularForFace(face* fp)
+{
+	return (GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR) ||
+		Render_preferred_state.per_pixel_lighting;
+}
+
 void RenderSpecularFacesFlat(room* rp)
 {
 	static int first = 1;
@@ -1390,6 +1403,11 @@ void RenderSpecularFacesFlat(room* rp)
 	for (int i = 0; i < Num_specular_faces_to_render; i++)
 	{
 		face* fp = &rp->faces[Specular_faces[i]];
+		const bool smooth_specular = UseSmoothSpecularForFace(fp);
+		const bool has_smooth_normals = FaceHasSmoothSpecularNormals(fp);
+		const bool use_smooth_normals = has_smooth_normals &&
+			((GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR) ||
+				Render_preferred_state.per_pixel_lighting);
 
 		int material_type = 0;
 		if (GameTextures[fp->tmap].flags & TF_PLASTIC)
@@ -1454,7 +1472,7 @@ void RenderSpecularFacesFlat(room* rp)
 					vm_NormalizeVectorFast(&incident_norm);
 					float d;
 					vector upvec;
-					if ((GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR) && (SpecialFaces[fp->special_handle].flags & SFF_SPEC_SMOOTH))
+					if (use_smooth_normals)
 					{
 						d = incident_norm * SpecialFaces[fp->special_handle].vertnorms[vn];
 						upvec = d * SpecialFaces[fp->special_handle].vertnorms[vn];
@@ -1506,7 +1524,7 @@ void RenderSpecularFacesFlat(room* rp)
 				}
 			}
 			// Finally, brighten these value up a bit
-			if (GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+			if (smooth_specular)
 			{
 				rv = rv * vr;
 				gv = gv * vg;
@@ -1543,7 +1561,7 @@ void RenderSpecularFacesFlat(room* rp)
 				p->p3_flags |= PF_RGBA | PF_UV;
 			}
 		}
-		if (GameTextures[fp->tmap].flags & TF_SMOOTH_SPECULAR)
+		if (smooth_specular)
 		{
 			smooth_faces[num_smooth_faces] = fp - rp->faces;
 			num_smooth_faces++;

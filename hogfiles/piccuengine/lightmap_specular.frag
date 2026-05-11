@@ -31,16 +31,18 @@ void main()
 	const float[4] weights = float[4](1.0, 0.66, 0.33, 0.25);
 	vec4 basecolor = texture(colortexture, outuv);
 	vec4 lmcolor = texture(lightmaptexture, outuv2);
-	color = vec4(basecolor.rgb * lmcolor.rgb, 1.0);
-	
+	vec3 spec_color = vec3(0.0);
+
 	vec3 pos = normalize(outpos);
 	vec3 normal = normalize(outnormal);
 	for (int i = 0; i < specular_data.num_specular; i++)
 	{
 		vec3 lightvec = normalize(outlightpos[i] + outpos);
 		vec3 reflectlight = reflect(-lightvec, normal);
-		
-		color += vec4(pow(max(dot(reflectlight, pos), 0.0), specular_data.exponent) * specular_data.speculars[i].color.xyz, 0.0) * lmcolor * specular_data.strength * basecolor.a * weights[i];
+
+		spec_color += pow(max(dot(reflectlight, pos), 0.0), specular_data.exponent) *
+			specular_data.speculars[i].color.xyz * lmcolor.rgb * specular_data.strength * weights[i];
 	}
-	hbao_mask = vec4(0.0, 0.0, 0.0, 1.0);
+	color = vec4(spec_color, basecolor.a);
+	hbao_mask = vec4(0.0);
 }

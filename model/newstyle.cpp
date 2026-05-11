@@ -560,8 +560,13 @@ inline void RenderSubmodelFaceSpecular (poly_model *pm,bsp_info *sm,int facenum)
 	int t;
 	bool smooth=0;
 	
-	if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && (GameTextures[fp->texnum].flags & TF_SMOOTH_SPECULAR))
-		smooth=1;
+	if (sm->vertnorms != nullptr)
+	{
+		if ((Polymodel_effect.type & PEF_SPECULAR_FACES) && (GameTextures[fp->texnum].flags & TF_SMOOTH_SPECULAR))
+			smooth=1;
+		else if ((Polymodel_effect.type & PEF_SPECULAR_MODEL) && UsePerPixelPolymodelLighting())
+			smooth=1;
+	}
 	
 	for (t=0;t<fp->nverts;t++) 
 	{

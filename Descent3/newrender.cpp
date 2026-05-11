@@ -111,6 +111,26 @@ struct SpecularDrawElement
 	special_face* special;
 };
 
+static bool FaceHasSmoothSpecularNormals(face& fp)
+{
+	return fp.special_handle != BAD_SPECIAL_FACE_INDEX &&
+		(SpecialFaces[fp.special_handle].flags & SFF_SPEC_SMOOTH) &&
+		SpecialFaces[fp.special_handle].vertnorms != nullptr;
+}
+
+static bool UseSmoothSpecularForFace(face& fp, int texturenum)
+{
+	return (GameTextures[texturenum].flags & TF_SMOOTH_SPECULAR) ||
+		Render_preferred_state.per_pixel_lighting;
+}
+
+static bool UseSmoothSpecularNormals(face& fp, int texturenum)
+{
+	return FaceHasSmoothSpecularNormals(fp) &&
+		((GameTextures[texturenum].flags & TF_SMOOTH_SPECULAR) ||
+			Render_preferred_state.per_pixel_lighting);
+}
+
 enum class PostRenderMode
 {
 	Lit,
@@ -482,6 +502,35 @@ void AddPostFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& eleme
 	}
 }
 
+static std::vector<vector> BuildSmoothSpecularNormals(room& rp, const std::vector<SortableElement>& elements)
+{
+	std::vector<vector> normals(rp.num_verts, Zero_vector);
+	std::vector<int> counts(rp.num_verts, 0);
+
+	for (const SortableElement& element : elements)
+	{
+		face& fp = rp.faces[element.element];
+		if (!UseSmoothSpecularForFace(fp, element.texturehandle))
+			continue;
+
+		for (int i = 0; i < fp.num_verts; i++)
+		{
+			int vert_index = fp.face_verts[i];
+			normals[vert_index] += UseSmoothSpecularNormals(fp, element.texturehandle) ?
+				SpecialFaces[fp.special_handle].vertnorms[i] : fp.normal;
+			counts[vert_index]++;
+		}
+	}
+
+	for (int i = 0; i < rp.num_verts; i++)
+	{
+		if (counts[i] > 0)
+			vm_NormalizeVector(&normals[i]);
+	}
+
+	return normals;
+}
+
 void AddSpecFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& elements, std::vector<SpecularDrawElement>& interactions, room& rp, int indexOffset, int firstIndex)
 {
 	if (elements.empty())
@@ -492,6 +541,7 @@ void AddSpecFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& eleme
 	bool firsttime = true;
 	int triindices[3];
 	RendVertex vert;
+	std::vector<vector> smooth_normals = BuildSmoothSpecularNormals(rp, elements);
 	for (SortableElement& element : elements)
 	{
 		mesh.BeginVertices();
@@ -505,13 +555,14 @@ void AddSpecFacesToBuffer(MeshBuilder& mesh, std::vector<SortableElement>& eleme
 		face& fp = rp.faces[element.element];
 
 		int first_index = mesh.NumVertices() + indexOffset;
-		if (GameTextures[element.texturehandle].flags & TF_SMOOTH_SPECULAR && fp.special_handle != BAD_SPECIAL_FACE_INDEX)
+		if (UseSmoothSpecularForFace(fp, element.texturehandle))
 		{
 			for (int i = 0; i < fp.num_verts; i++)
 			{
 				roomUVL uvs = fp.face_uvls[i];
+				int vert_index = fp.face_verts[i];
 				vert.position = rp.verts[fp.face_verts[i]];
-				vert.normal = SpecialFaces[fp.special_handle].vertnorms[i];
+				vert.normal = smooth_normals[vert_index] != Zero_vector ? smooth_normals[vert_index] : fp.normal;
 				vert.r = vert.g = vert.b = vert.a = 255;
 				vert.u1 = uvs.u; vert.v1 = uvs.v;
 				vert.u2 = uvs.u2; vert.v2 = uvs.v2;
@@ -625,17 +676,14 @@ void UpdateRoomMesh(MeshBuilder& mesh, int roomnum, int indexOffset, int firstIn
 			}
 			else if (fp.flags & FF_LIGHTMAP)
 			{
-				//If the face is specular, add it for a post stage. 
+				faces_lit.push_back(SortableElement{ i, (ushort)tmap, LightmapInfo[fp.lmi_handle].lm_handle });
+
+				//If the face is specular, add it for a post stage.
 				//Specs have to be in a special pass like this so that the size of the room vertex buffer never changes
-				//External specular faces don't use a special face, and therefore can never be smooth. Heh. 
+				//External specular faces don't use a special face, and therefore can never be smooth. Heh.
 				if (GameTextures[tmap].flags & TF_SPECULAR && (fp.special_handle != BAD_SPECIAL_FACE_INDEX || (rp.flags & RF_EXTERNAL)))
 				{
 					faces_spec.push_back(SortableElement{ i, (ushort)tmap, LightmapInfo[fp.lmi_handle].lm_handle });
-				}
-				else
-				{
-					//TODO: Add field names when Piccu becomes C++20.
-					faces_lit.push_back(SortableElement{ i, (ushort)tmap, LightmapInfo[fp.lmi_handle].lm_handle });
 				}
 			}
 			else
@@ -1242,10 +1290,15 @@ void RenderList::Draw()
 	Room_IndexBuffer.Bind();
 
 	PreDraw();
+	rend_SetAlphaType(AT_ALWAYS);
 	DrawWorld(0);
+	rend_SetAlphaType(AT_SPECULAR);
 	DrawWorld(2);
+	rend_SetAlphaType(AT_ALWAYS);
 	DrawWorld(3);
+	rend_SetAlphaType(AT_SPECULAR);
 	DrawWorld(5);
+	rend_SetAlphaType(AT_ALWAYS);
 
 	std::sort(PostRenders.begin(), PostRenders.end());
 	DrawPostrenders();

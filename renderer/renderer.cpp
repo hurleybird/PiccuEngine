@@ -132,6 +132,30 @@ void rend_DrawPolygon2D(int handle, g3Point** p, int nv)
 	renderer_inst->DrawPolygon2D(handle, p, nv);
 }
 
+void rend_BeginMotionObject(int object_handle, float screen_x, float screen_y)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->BeginMotionObject(object_handle, screen_x, screen_y);
+}
+
+void rend_EndMotionObject()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->EndMotionObject();
+}
+
+bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y)
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->ProjectPreviousFramePoint(world_pos, screen_x, screen_y);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

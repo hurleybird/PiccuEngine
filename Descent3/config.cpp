@@ -645,7 +645,6 @@ void config_gamma()
 #define RESBUFFER_SIZE 50
 #define IDV_CHANGEWINDOW 10
 #define IDV_HBAOSETTINGS 11
-#define IDV_HBAOAPPLY 12
 #define UID_RESOLUTION 110
 #define HBAO_RADIUS_SLIDER_UNITS 315
 #define HBAO_INTENSITY_SLIDER_UNITS 80
@@ -684,7 +683,6 @@ static void config_hbao()
 {
 	newuiTiledWindow hbao_wnd;
 	newuiSheet* sheet;
-	renderer_preferred_state initial_state = Render_preferred_state;
 	bool* enabled;
 	int* quality;
 	int* blur;
@@ -743,35 +741,17 @@ static void config_hbao()
 		&bias_settings);
 
 	sheet->NewGroup(NULL, 78, 282, NEWUI_ALIGN_HORIZ);
-	sheet->AddButton(TXT_APPLY, IDV_HBAOAPPLY);
-	sheet->AddText(" ");
 	sheet->AddButton(TXT_OK, UID_OK);
-	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
 
 	hbao_wnd.Open();
 
 	do
 	{
 		res = hbao_wnd.DoUI();
-		if (res == IDV_HBAOAPPLY)
-		{
-			ApplyHBAOSettingsFromUI(enabled, quality, blur, radius, intensity, bias,
-				radius_settings, intensity_settings, bias_settings);
-			rend_SetPreferredState(&Render_preferred_state);
-		}
-	} while (res != UID_OK && res != UID_CANCEL && res != NEWUIRES_FORCEQUIT);
-
-	if (res == UID_OK)
-	{
 		ApplyHBAOSettingsFromUI(enabled, quality, blur, radius, intensity, bias,
 			radius_settings, intensity_settings, bias_settings);
-	}
-	else
-	{
-		Render_preferred_state = initial_state;
-	}
-
-	rend_SetPreferredState(&Render_preferred_state);
+		rend_SetPreferredState(&Render_preferred_state);
+	} while (res != UID_OK && res != NEWUIRES_FORCEQUIT);
 
 	hbao_wnd.Close();
 	hbao_wnd.Destroy();
@@ -791,6 +771,7 @@ struct video_menu
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
 	bool* hbao_enabled;
+	bool* debug_motion_vectors;
 	bool* vsync;
 
 	int* resolution;									// all resolutions
@@ -898,6 +879,11 @@ struct video_menu
 			Render_preferred_state.hbao_enabled = *hbao_enabled;
 			changed = true;
 		}
+		if (debug_motion_vectors && sheet->HasChanged(debug_motion_vectors))
+		{
+			Render_preferred_state.debug_motion_vectors = *debug_motion_vectors;
+			changed = true;
+		}
 		if (vsync && sheet->HasChanged(vsync))
 		{
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
@@ -986,6 +972,8 @@ struct video_menu
 		sheet->NewGroup("HBAO", 184, 188);
 		hbao_enabled = sheet->AddLongCheckBox("Enable HBAO", Render_preferred_state.hbao_enabled);
 		sheet->AddLongButton("HBAO settings...", IDV_HBAOSETTINGS);
+		debug_motion_vectors = sheet->AddLongCheckBox("Show motion vectors",
+			Render_preferred_state.debug_motion_vectors);
 
 		return sheet;
 	};
@@ -1003,6 +991,8 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 		if (hbao_enabled)
 			Render_preferred_state.hbao_enabled = *hbao_enabled;
+		if (debug_motion_vectors)
+			Render_preferred_state.debug_motion_vectors = *debug_motion_vectors;
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)

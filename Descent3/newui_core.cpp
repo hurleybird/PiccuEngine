@@ -295,6 +295,7 @@ class newuiSlider : public UIGadget
 	newuiArrowButton m_minus_btn;
 	newuiArrowButton m_plus_btn;
 	tSliderSettings m_unit_settings;
+	bool m_dragging;
 
 public:
 	newuiSlider();
@@ -308,6 +309,7 @@ public:
 	void SetUnits(tSliderSettings* settings);
 
 protected:
+	void SetPosFromMouse();
 	virtual void OnFormat();						// override: called when resized or before drawing.
 	virtual void OnLostFocus();					// override: behavior when gadget loses input focus.
 	virtual void OnGainFocus();					// override: behavior when gadget gains input focus.
@@ -316,6 +318,9 @@ protected:
 	virtual void OnNotifySelect(UIGadget* g);	// this function will handle when an arrow button was pressed
 	virtual void OnKeyDown(int btn);				// override: behavior when key pressed.
 	virtual void OnKeyUp(int btn);				// override: behavior when key released.
+	virtual void OnMouseBtnDown(int btn);
+	virtual void OnMouseBtnUp(int btn);
+	virtual void OnUserProcess();
 	virtual void OnAttachToWindow();				// when gadget is added to a window (AddGadget is called)
 	virtual void OnDetachFromWindow();			// when gadget is detached from window
 };
@@ -2558,6 +2563,7 @@ newuiSlider::newuiSlider()
 	m_pos = m_unitrange = 0;
 	m_bar_bmp = NULL;
 	m_title = NULL;
+	m_dragging = false;
 }
 
 void newuiSlider::Create(UIWindow* wnd, short id, const char* name, short x, short y, short range)
@@ -2594,6 +2600,21 @@ void newuiSlider::SetPos(short pos)
 void newuiSlider::SetRange(short range)
 {
 	m_unitrange = range;
+}
+
+void newuiSlider::SetPosFromMouse()
+{
+	if (!m_bar_bmp || m_unitrange <= 0)
+		return;
+
+	int bar_x = m_Wnd->X() + m_X + 20;
+	int bar_w = m_bar_bmp->width() - 42;
+	if (bar_w <= 0)
+		return;
+
+	int mouse_x = UI_input.mx;
+	int pos = ((mouse_x - bar_x) * m_unitrange + (bar_w / 2)) / bar_w;
+	SetPos((short)pos);
 }
 
 
@@ -2658,6 +2679,7 @@ void newuiSlider::OnLostFocus()
 {
 	if (m_title)
 		m_title->set_flags(0);
+	m_dragging = false;
 }
 
 
@@ -2687,6 +2709,39 @@ void newuiSlider::OnKeyDown(int key)
 // override: behavior when key released.
 void newuiSlider::OnKeyUp(int key)
 {
+}
+
+void newuiSlider::OnMouseBtnDown(int btn)
+{
+	if (btn == UILMSEBTN && PT_IN_GADGET(m_Wnd, this, UI_input.mx, UI_input.my))
+	{
+		m_dragging = true;
+		LOCK_FOCUS(this);
+		SetPosFromMouse();
+		UIGadget::OnSelect();
+	}
+}
+
+void newuiSlider::OnMouseBtnUp(int btn)
+{
+	if (btn == UILMSEBTN && m_dragging)
+	{
+		SetPosFromMouse();
+		m_dragging = false;
+		UNLOCK_FOCUS(this);
+		UIGadget::OnSelect();
+	}
+}
+
+void newuiSlider::OnUserProcess()
+{
+	if (m_dragging)
+	{
+		short old_pos = m_pos;
+		SetPosFromMouse();
+		if (old_pos != m_pos)
+			UIGadget::OnSelect();
+	}
 }
 
 

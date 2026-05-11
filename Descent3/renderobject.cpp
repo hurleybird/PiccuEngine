@@ -1363,6 +1363,9 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	if (use_effect)
 		SetPolymodelEffect(&pe);
 
+	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
+	rend_BeginMotionObject(OBJNUM(obj), 0.0f, 0.0f);
+
 	if (RenderObjectType == RO_STATIC)
 	{
 		// Draw this object with static light
@@ -1396,6 +1399,9 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 	}
 	else
 		Int3();	// Get Jason
+
+	rend_EndMotionObject();
+	PolymodelMotionEndObject();
 }
 
 // Sets the direction of the lightsource to be used when calculating vertex lighting

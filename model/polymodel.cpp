@@ -17,6 +17,7 @@
 */
 
 #include <algorithm>
+#include <unordered_map>
 #include "objinfo.h"
 #include "polymodel.h"
 #include "pserror.h"
@@ -42,6 +43,138 @@ g3Point Robot_points[MAX_POLYGON_VECS];
 vector Interp_pos_instance_vec={0,0,0};
 vector Instance_vec_stack[MAX_SUBOBJECTS];
 int Instance_vec_cnt=0;
+
+struct PolymodelMotionSubmodelSnapshot
+{
+	vector mod_pos;
+	angvec angs;
+};
+
+struct PolymodelMotionSnapshot
+{
+	vector pos;
+	matrix orient;
+	int model_num = -1;
+	int n_models = 0;
+	PolymodelMotionSubmodelSnapshot submodels[MAX_SUBOBJECTS];
+};
+
+struct PolymodelMotionHistory
+{
+	PolymodelMotionSnapshot previous;
+	PolymodelMotionSnapshot current;
+	bool has_previous = false;
+	bool has_current = false;
+	uint32_t last_frame = 0;
+};
+
+static std::unordered_map<int, PolymodelMotionHistory> Polymodel_motion_history;
+static PolymodelMotionHistory *Polymodel_motion_active_history = nullptr;
+static bool Polymodel_motion_active = false;
+static uint32_t Polymodel_motion_frame = 0;
+
+void PolymodelMotionStartFrame()
+{
+	Polymodel_motion_frame++;
+	Polymodel_motion_active = false;
+	Polymodel_motion_active_history = nullptr;
+}
+
+void PolymodelMotionBeginObject(int object_handle, vector *pos, matrix *orient)
+{
+	Polymodel_motion_active = false;
+	Polymodel_motion_active_history = nullptr;
+
+	if (object_handle < 0 || !pos || !orient)
+		return;
+
+	PolymodelMotionHistory &history = Polymodel_motion_history[object_handle];
+	if (history.last_frame != Polymodel_motion_frame)
+	{
+		if (history.has_current)
+		{
+			history.previous = history.current;
+			history.has_previous = true;
+		}
+
+		history.current.pos = *pos;
+		history.current.orient = *orient;
+		history.current.model_num = -1;
+		history.current.n_models = 0;
+		history.last_frame = Polymodel_motion_frame;
+	}
+
+	Polymodel_motion_active_history = &history;
+	Polymodel_motion_active = history.has_previous;
+}
+
+void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient)
+{
+	if (!Polymodel_motion_active_history || !pm || !pos || !orient)
+		return;
+
+	PolymodelMotionSnapshot &current = Polymodel_motion_active_history->current;
+	current.pos = *pos;
+	current.orient = *orient;
+	current.model_num = pm - Poly_models;
+	current.n_models = pm->n_models;
+	if (current.n_models > MAX_SUBOBJECTS)
+		current.n_models = MAX_SUBOBJECTS;
+
+	for (int i = 0; i < current.n_models; i++)
+	{
+		current.submodels[i].mod_pos = pm->submodel[i].mod_pos;
+		current.submodels[i].angs = pm->submodel[i].angs;
+	}
+
+	Polymodel_motion_active_history->has_current = true;
+}
+
+void PolymodelMotionEndObject()
+{
+	Polymodel_motion_active = false;
+	Polymodel_motion_active_history = nullptr;
+}
+
+void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos)
+{
+	if (!point)
+		return;
+
+	point->p3_motion_valid = 0;
+	if (!Polymodel_motion_active || !Polymodel_motion_active_history || !pm || !local_pos)
+		return;
+
+	const PolymodelMotionSnapshot &previous = Polymodel_motion_active_history->previous;
+	if (previous.model_num != (pm - Poly_models) || submodel_num < 0 || submodel_num >= previous.n_models)
+		return;
+
+	vector pnt = *local_pos;
+	int mn = submodel_num;
+	while (mn != -1)
+	{
+		if (mn >= previous.n_models)
+			return;
+
+		matrix m;
+		vm_AnglesToMatrix(&m, previous.submodels[mn].angs.p,
+			previous.submodels[mn].angs.h, previous.submodels[mn].angs.b);
+		vm_TransposeMatrix(&m);
+		pnt = (pnt * m) + pm->submodel[mn].offset + previous.submodels[mn].mod_pos;
+		mn = pm->submodel[mn].parent;
+	}
+
+	matrix object_matrix = previous.orient;
+	vm_TransposeMatrix(&object_matrix);
+	vector world_pos = (pnt * object_matrix) + previous.pos;
+	float sx = 0.0f, sy = 0.0f;
+	if (rend_ProjectPreviousFramePoint(&world_pos, &sx, &sy))
+	{
+		point->p3_prev_sx = sx;
+		point->p3_prev_sy = sy;
+		point->p3_motion_valid = 1;
+	}
+}
 
 #ifdef _DEBUG
 //Flag to draw an outline around the faces
@@ -2628,6 +2761,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	StartLightInstance(pos,orient);
 	
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{
@@ -2719,6 +2853,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{
@@ -2798,6 +2933,7 @@ void DrawPolygonModel(vector *pos,matrix *orient,int model_num,float *normalized
 	
 	po=&Poly_models[model_num];
 	SetModelAnglesAndPos (po,normalized_time,f_render_sub);
+	PolymodelMotionCaptureCurrent(po, pos, orient);
 
 	if (f_render_sub==0xFFFFFFFF || overlay)		//draw entire object
 	{

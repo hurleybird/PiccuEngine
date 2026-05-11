@@ -67,6 +67,12 @@ struct gl_vertex
 	normal_array normal;
 };
 
+struct gl_motion_vertex
+{
+	float x, y, z;
+	float velocity_x, velocity_y;
+};
+
 constexpr int NUM_GL3_FBOS = 2;
 class GL3Renderer : public IRenderer
 {
@@ -83,6 +89,7 @@ class GL3Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
+	MotionVectorResources motion_vectors;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
 
@@ -90,6 +97,8 @@ class GL3Renderer : public IRenderer
 
 	ShaderProgram blitshader;
 	ShaderProgram downsampleshader;
+	ShaderProgram motionvectorshader;
+	ShaderProgram motiondebugshader;
 	BloomResources bloom;
 	HBAOResources hbao;
 	//Cached projection matrix and near/far for HBAO. Updated on every
@@ -97,11 +106,18 @@ class GL3Renderer : public IRenderer
 	float last_projection[16] = {};
 	float last_nearz = 1.0f;
 	float last_farz = 10000.f;
+	float current_view_projection[16] = {};
+	float current_inverse_view_projection[16] = {};
+	float previous_view_projection[16] = {};
+	bool have_current_view_projection = false;
+	bool have_current_inverse_view_projection = false;
+	bool have_previous_view_projection = false;
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
 	GLint downsampleshader_gamma = -1;
 	GLint downsampleshader_dest_origin = -1;
+	GLint motionvector_screen_size = -1;
 	GLfloat max_line_width = 1.0f;
 	GLfloat max_point_size = 1.0f;
 
@@ -152,6 +168,9 @@ class GL3Renderer : public IRenderer
 
 	GLuint drawvao = 0;
 	void* drawbuffermap = 0;
+	GLuint motionvector_vao = 0;
+	GLuint motionvector_vbo = 0;
+	bool motion_object_active = false;
 
 	//IMAGE
 	ubyte opengl_Framebuffer_ready = 0;
@@ -197,7 +216,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, HBAO_QUALITY_MEDIUM, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -227,6 +246,9 @@ private:
 	int CopyVertices(int numvertices);
 	void SetDrawDefaults();
 	void SelectDrawShader();
+	void InitMotionVectorDraw();
+	void DestroyMotionVectorDraw();
+	void DrawMotionVectorPolygon(int nv, g3Point** p);
 
 	// Turns on/off multitexture blending
 	void SetMultitextureBlendMode(bool state);
@@ -421,6 +443,10 @@ public:
 
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	void DrawPolygon2D(int handle, g3Point** p, int nv) override;
+
+	void BeginMotionObject(int object_handle, float screen_x, float screen_y) override;
+	void EndMotionObject() override;
+	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

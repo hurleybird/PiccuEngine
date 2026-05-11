@@ -21,6 +21,7 @@
 #include "pserror.h"
 #include "HardwareInternal.h"
 #include "renderer.h"
+#include "polymodel.h"
 
 //User-specified aspect ratio, stored as w/h
 static float sAspect = 0.0f;
@@ -88,6 +89,8 @@ void g3_GetProjectionMatrix( float zoom, float *projMat )
 //start the frame
 void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom)
 {
+	PolymodelMotionStartFrame();
+
 	// initialize the viewport transform
 	g3_GetProjectionMatrix( zoom, gTransformProjection );
 	g3_GetModelViewMatrix( view_pos, view_matrix, gTransformModelView );

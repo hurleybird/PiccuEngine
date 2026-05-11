@@ -123,6 +123,12 @@ void StartPolyModelPosInstance (vector *posvec);
 // Pops a positional instance
 void DonePolyModelPosInstance ();
 
+void PolymodelMotionStartFrame();
+void PolymodelMotionBeginObject(int object_handle, vector *pos, matrix *orient);
+void PolymodelMotionCaptureCurrent(poly_model *pm, vector *pos, matrix *orient);
+void PolymodelMotionEndObject();
+void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, const vector *local_pos);
+
 void SetModelAngles (poly_model *po,float *normalized_angles);
 void SetModelInterpPos (poly_model *po,float *normalized_pos);
 

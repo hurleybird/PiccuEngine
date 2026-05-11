@@ -172,6 +172,10 @@ public:
 	// Given a handle to a bitmap and nv point vertices, draws a 2D polygon
 	virtual void DrawPolygon2D(int handle, g3Point** p, int nv) = 0;
 
+	virtual void BeginMotionObject(int object_handle, float screen_x, float screen_y) {}
+	virtual void EndMotionObject() {}
+	virtual bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) { return false; }
+
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 	virtual void DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color = -1, float* alphas = nullptr) = 0;

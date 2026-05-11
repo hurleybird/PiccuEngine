@@ -967,12 +967,16 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 				vec*=1.0+(Polymodel_effect.deform_range*val);
 
 				g3_RotatePoint(&Robot_points[i],&vec);
+				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &vec);
 			}
 		}
 		else
 		{
 			for (int i=0;i<sm->nverts;i++)
+			{
 				g3_RotatePoint(&Robot_points[i],&sm->verts[i]);
+				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &sm->verts[i]);
+			}
 		}
 	}
 	else if (Polymodel_light_type==POLYMODEL_LIGHTING_LIGHTMAP)
@@ -986,6 +990,7 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 				vec*=1.0+(Polymodel_effect.deform_range*val);
 
 				g3_RotatePoint(&Robot_points[i],&vec);
+				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &vec);
 
 				Robot_points[i].p3_r=1.0;
 				Robot_points[i].p3_g=1.0;
@@ -997,6 +1002,7 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 			for (int i=0;i<sm->nverts;i++)
 			{
 				g3_RotatePoint(&Robot_points[i],&sm->verts[i]);
+				PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &sm->verts[i]);
 				Robot_points[i].p3_r=1.0;
 				Robot_points[i].p3_g=1.0;
 				Robot_points[i].p3_b=1.0;
@@ -1016,6 +1022,7 @@ void RotateModelPoints (poly_model *pm,bsp_info *sm)
 			}
 
 			g3_RotatePoint(&Robot_points[i],&vec);
+			PolymodelMotionSetPoint(&Robot_points[i], pm, sm - pm->submodel, &vec);
 			vector normvec=sm->vertnorms[i];
 			SetPolymodelGouraudPointLighting(Robot_points[i], normvec);
 		}

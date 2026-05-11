@@ -143,6 +143,50 @@ public:
 	}
 };
 
+class ColorFramebuffer
+{
+	GLuint m_name = 0;
+	GLuint m_colorname = 0;
+	uint32_t m_width = 0;
+	uint32_t m_height = 0;
+
+public:
+	void Update(int width, int height, GLint internal_format, GLenum format, GLenum type);
+	void Destroy();
+	GLuint Handle() const
+	{
+		return m_name;
+	}
+	GLuint ColorTextureForRead() const
+	{
+		return m_colorname;
+	}
+	uint32_t Width() const
+	{
+		return m_width;
+	}
+	uint32_t Height() const
+	{
+		return m_height;
+	}
+};
+
+struct MotionVectorResources
+{
+	GLuint velocity_texture = 0;
+	GLuint resolved_texture = 0;
+	GLuint resolve_framebuffer = 0;
+	uint32_t width = 0;
+	uint32_t height = 0;
+	uint32_t samples = 0;
+
+	void Update(uint32_t width, uint32_t height, uint32_t msaa_samples);
+	void Destroy();
+	void AttachToFramebuffer(GLuint framebuffer);
+	void ClearAttached(GLuint framebuffer);
+	GLuint TextureForRead(GLuint source_framebuffer);
+};
+
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 //Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if
@@ -177,17 +221,27 @@ struct BloomResources
 //Reconstructs view-space normals from the depth buffer (we have no normals G-buffer).
 struct HBAOResources
 {
-	//Framebuffer holding the AO result (RG8: x=AO, y=depth).
-	Framebuffer ao_framebuffer;
+	//Framebuffer holding the AO result (RG16F: x=AO, y=depth).
+	ColorFramebuffer ao_framebuffer;
 	//Scratch used as ping-pong for the separable bilateral blur.
-	Framebuffer ao_blur_framebuffer;
+	ColorFramebuffer ao_blur_framebuffer;
+	ColorFramebuffer temporal_framebuffers[2];
 	uint32_t frame_counter = 0;
+	uint32_t temporal_index = 0;
+	bool temporal_valid = false;
+	bool temporal_settings_valid = false;
+	int temporal_quality = -1;
+	int temporal_blur = -1;
+	float temporal_radius = -1.0f;
+	float temporal_intensity = -1.0f;
+	float temporal_bias = -1.0f;
 
 	GLuint noise_texture = 0;
 
 	ShaderProgram ao_shader;
 	ShaderProgram blur_x_shader;
 	ShaderProgram blur_y_shader;
+	ShaderProgram temporal_shader;
 	ShaderProgram apply_shader;
 
 	//AO shader uniforms.
@@ -215,6 +269,17 @@ struct HBAOResources
 	GLint blur_y_sharpness = -1;
 	GLint blur_y_radius = -1;
 
+	//Temporal accumulation shader uniforms.
+	GLint temporal_current_ao = -1;
+	GLint temporal_history = -1;
+	GLint temporal_depth = -1;
+	GLint temporal_motion = -1;
+	GLint temporal_current_inv_view_projection = -1;
+	GLint temporal_previous_view_projection = -1;
+	GLint temporal_has_history = -1;
+	GLint temporal_has_motion = -1;
+	GLint temporal_history_weight = -1;
+
 	//Apply (composite) shader uniforms.
 	GLint apply_intensity = -1;
 
@@ -222,13 +287,17 @@ struct HBAOResources
 	void DestroyShaders();
 	void DestroyFramebuffers();
 	void Destroy();
+	void InvalidateHistory();
 	//Computes AO for the supplied source framebuffer (which must have valid
 	//color + depth). Modulates source->color in place by sampling
 	//pref_state and projection info. Caller must ensure source is currently
 	//bound for drawing (the framebuffer is rebound inside the function).
 	void Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
 		const rendering_state& render_state, const float* projection,
-		float nearz, float farz);
+		float nearz, float farz, GLuint motion_texture,
+		const float* current_inv_view_projection,
+		const float* previous_view_projection,
+		bool has_previous_view_projection);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

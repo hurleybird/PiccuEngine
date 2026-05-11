@@ -506,6 +506,7 @@ void LoadGameSettings()
 	Render_preferred_state.hbao_radius = 4.0f;
 	Render_preferred_state.hbao_intensity = 1.0f;
 	Render_preferred_state.hbao_bias = 0.1f;
+	Render_preferred_state.debug_motion_vectors = false;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
 	Hud_text_scale = 1.0f;

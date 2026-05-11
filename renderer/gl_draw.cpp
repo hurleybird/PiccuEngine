@@ -102,6 +102,89 @@ void GL3Renderer::DestroyPersistentDrawBuffer()
 	}
 }
 
+void GL3Renderer::InitMotionVectorDraw()
+{
+	if (motionvector_vao != 0)
+		return;
+
+	glGenVertexArrays(1, &motionvector_vao);
+	glGenBuffers(1, &motionvector_vbo);
+
+	glBindVertexArray(motionvector_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * 100, nullptr, GL_STREAM_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(gl_motion_vertex), 0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(gl_motion_vertex),
+		(const void*)offsetof(gl_motion_vertex, velocity_x));
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(drawvao);
+}
+
+void GL3Renderer::DestroyMotionVectorDraw()
+{
+	glDeleteBuffers(1, &motionvector_vbo);
+	glDeleteVertexArrays(1, &motionvector_vao);
+	motionvector_vbo = 0;
+	motionvector_vao = 0;
+}
+
+void GL3Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
+{
+	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0)
+	{
+		return;
+	}
+
+	gl_motion_vertex motion_vertices[100];
+	for (int i = 0; i < nv; i++)
+	{
+		if (!p[i]->p3_motion_valid)
+			return;
+
+		motion_vertices[i].x = GL_vertices[i].vert.x;
+		motion_vertices[i].y = GL_vertices[i].vert.y;
+		motion_vertices[i].z = GL_vertices[i].vert.z;
+		motion_vertices[i].velocity_x = p[i]->p3_sx - p[i]->p3_prev_sx;
+		motion_vertices[i].velocity_y = p[i]->p3_sy - p[i]->p3_prev_sy;
+	}
+
+	GLboolean color_mask[4];
+	GLboolean depth_mask;
+	GLint old_draw = 0;
+	GLint old_draw_buffer = 0;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+	GLenum draw_buffer = GL_COLOR_ATTACHMENT1;
+	glDrawBuffers(1, &draw_buffer);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
+
+	motionvectorshader.Use();
+	if (motionvector_screen_size != -1)
+		glUniform2f(motionvector_screen_size, (float)OpenGL_state.screen_width, (float)OpenGL_state.screen_height);
+
+	glBindVertexArray(motionvector_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, motionvector_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(gl_motion_vertex) * nv, motion_vertices, GL_STREAM_DRAW);
+	glDrawArrays(GL_TRIANGLE_FAN, 0, nv);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glDrawBuffer(old_draw_buffer);
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glDepthMask(depth_mask);
+	UseDrawVAO();
+}
+
 int GL3Renderer::CopyVertices(int numvertices)
 {
 	if (OpenGL_buffer_storage_enabled)
@@ -244,6 +327,8 @@ void GL3Renderer::SetDrawDefaults()
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	InitMotionVectorDraw();
 }
 
 void GL3Renderer::SelectDrawShader()
@@ -460,6 +545,7 @@ void GL3Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 	// And draw!
 	int offset = CopyVertices(nv);
 	glDrawArrays(GL_TRIANGLE_FAN, offset, nv);
+	DrawMotionVectorPolygon(nv, p);
 	OpenGL_polys_drawn++;
 	OpenGL_verts_processed += nv;
 
@@ -474,6 +560,40 @@ void GL3Renderer::DrawPolygon2D(int handle, g3Point** p, int nv)
 	ASSERT(Overlay_type == OT_NONE);
 
 	DrawPolygon3D(handle, p, nv, MAP_TYPE_BITMAP);
+}
+
+void GL3Renderer::BeginMotionObject(int object_handle, float screen_x, float screen_y)
+{
+	motion_object_active = object_handle >= 0 && framebuffer_ok && motion_vectors.velocity_texture != 0;
+}
+
+void GL3Renderer::EndMotionObject()
+{
+	motion_object_active = false;
+}
+
+bool GL3Renderer::ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y)
+{
+	if (!world_pos || !screen_x || !screen_y || !have_previous_view_projection)
+		return false;
+
+	float x = world_pos->x;
+	float y = world_pos->y;
+	float z = world_pos->z;
+	float clip_x = previous_view_projection[0] * x + previous_view_projection[4] * y +
+		previous_view_projection[8] * z + previous_view_projection[12];
+	float clip_y = previous_view_projection[1] * x + previous_view_projection[5] * y +
+		previous_view_projection[9] * z + previous_view_projection[13];
+	float clip_w = previous_view_projection[3] * x + previous_view_projection[7] * y +
+		previous_view_projection[11] * z + previous_view_projection[15];
+	if (clip_w <= 0.00001f)
+		return false;
+
+	float ndc_x = clip_x / clip_w;
+	float ndc_y = clip_y / clip_w;
+	*screen_x = (ndc_x * 0.5f + 0.5f) * (float)OpenGL_state.screen_width;
+	*screen_y = (0.5f - ndc_y * 0.5f) * (float)OpenGL_state.screen_height;
+	return true;
 }
 
 // draws a scaled 2d bitmap to our buffer

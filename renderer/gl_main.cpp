@@ -249,6 +249,8 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 
 	if (glclearflags != 0)
 		glClear(glclearflags);
+	if (framebuffer_ok)
+		motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
 	if (RendererMsaaSamples(OpenGL_preferred_state) >= 2)
 		glEnable(GL_MULTISAMPLE);
 	else
@@ -327,24 +329,35 @@ void GL3Renderer::Flip()
 		present_framebuffer = &resolved_framebuffer;
 	}
 
-	GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
-	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
-	if (bloom_framebuffer)
+	if (OpenGL_preferred_state.debug_motion_vectors && framebuffer_ok)
 	{
-		bloom.compositeshader.Use();
-		glUniform1f(bloom.composite_gamma, display_gamma);
-		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+		GLuint motion_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
+		motiondebugshader.Use();
 		rend_ClearBoundTextures();
-		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
-		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
-		GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
+		GL_BindFramebufferTexture(motion_texture, 0, GL_NEAREST);
 		GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
 	}
 	else
 	{
-		blitshader.Use();
-		glUniform1f(blitshader_gamma, display_gamma);
-		present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+		GLuint bloom_depth = bloom_source_valid ? bloom_source_framebuffer.DepthTextureForRead() : 0;
+		Framebuffer* bloom_framebuffer = bloom.Apply(bloom_effect_source, OpenGL_preferred_state, OpenGL_state, display_gamma, bloom_depth);
+		if (bloom_framebuffer)
+		{
+			bloom.compositeshader.Use();
+			glUniform1f(bloom.composite_gamma, display_gamma);
+			glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
+			rend_ClearBoundTextures();
+			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
+			GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
+			GL_BindFramebufferTexture(bloom_scene_source->ColorTextureForRead(), 2, GL_NEAREST);
+			GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
+		}
+		else
+		{
+			blitshader.Use();
+			glUniform1f(blitshader_gamma, display_gamma);
+			present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+		}
 	}
 	ShaderProgram::ClearBinding();
 
@@ -400,6 +413,8 @@ void GL3Renderer::CaptureBloomSource()
 	//capture below already contains AO-darkened scene color. This keeps
 	//the bloom composite "scene mask" (which detects HUD overlays by diff)
 	//consistent regardless of AO. HBAO is a no-op if disabled.
+	if (!OpenGL_preferred_state.hbao_enabled)
+		hbao.InvalidateHistory();
 	if (OpenGL_preferred_state.hbao_enabled && framebuffer_ok)
 	{
 		float near_z = last_nearz;
@@ -415,8 +430,17 @@ void GL3Renderer::CaptureBloomSource()
 			if (near_z <= 0.0f) near_z = 1.0f;
 			if (far_z <= near_z) far_z = near_z * 1000.0f;
 		}
+		GLuint motion_texture = motion_vectors.TextureForRead(framebuffers[framebuffer_current_draw].Handle());
 		hbao.Apply(&framebuffers[framebuffer_current_draw], OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z);
+			OpenGL_state, last_projection, near_z, far_z, motion_texture,
+			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
+			previous_view_projection,
+			have_current_inverse_view_projection && have_previous_view_projection);
+	}
+	if (framebuffer_ok && have_current_view_projection)
+	{
+		memcpy(previous_view_projection, current_view_projection, sizeof(previous_view_projection));
+		have_previous_view_projection = true;
 	}
 
 	if (!OpenGL_preferred_state.bloom_enabled)
@@ -1100,6 +1124,8 @@ void GL3Renderer::UpdateFramebuffer(void)
 	for (int i = 0; i < NUM_GL3_FBOS; i++)
 	{
 		framebuffers[i].Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
+		motion_vectors.Update(FramebufferWidth(), FramebufferHeight(), RendererMsaaSamples(OpenGL_preferred_state));
+		motion_vectors.AttachToFramebuffer(framebuffers[i].Handle());
 	}
 	int supersampling_factor = SupersamplingFactor();
 	if (supersampling_factor >= 2)
@@ -1139,6 +1165,7 @@ void GL3Renderer::CloseFramebuffer(void)
 	bloom_source_resolved_framebuffer.Destroy();
 	bloom_source_downscale_framebuffer.Destroy();
 	bloom_source_valid = false;
+	motion_vectors.Destroy();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

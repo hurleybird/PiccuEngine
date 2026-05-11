@@ -67,6 +67,7 @@ ubyte g3_RotatePoint(g3Point *dest,vector *src)
 {
 	// store the pre-rotated point
 	dest->p3_vecPreRot = *src;
+	dest->p3_motion_valid = 0;
 
 	// find the point offset from the view/camera position
 	vector tempv = *src - View_position;

@@ -629,6 +629,9 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	extern const char* blitVertexSrc;
 	extern const char* blitFragmentSrc;
 	extern const char* downsampleFragmentSrc;
+	extern const char* motionVectorVertexSrc;
+	extern const char* motionVectorFragmentSrc;
+	extern const char* motionDebugFragmentSrc;
 	blitshader.AttachSource(blitVertexSrc, blitFragmentSrc);
 	blitshader.Use();
 	GLint blitshader_source = blitshader.FindUniform("heh");
@@ -649,6 +652,18 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	downsampleshader_dest_origin = downsampleshader.FindUniform("dest_origin");
 	if (downsampleshader_dest_origin == -1)
 		Error("GLRenderer::Init: Failed to find downsample dest_origin uniform!");
+
+	motionvectorshader.AttachSource(motionVectorVertexSrc, motionVectorFragmentSrc);
+	motionvectorshader.Use();
+	motionvector_screen_size = motionvectorshader.FindUniform("screen_size");
+	if (motionvector_screen_size == -1)
+		Error("GLRenderer::Init: Failed to find motion-vector screen_size uniform!");
+
+	motiondebugshader.AttachSource(blitVertexSrc, motionDebugFragmentSrc);
+	motiondebugshader.Use();
+	GLint motion_debug_source = motiondebugshader.FindUniform("heh");
+	if (motion_debug_source != -1)
+		glUniform1i(motion_debug_source, 0);
 
 	bloom.InitShaders();
 	hbao.InitShaders();
@@ -671,6 +686,8 @@ void GL3Renderer::Close()
 
 	blitshader.Destroy();
 	downsampleshader.Destroy();
+	motionvectorshader.Destroy();
+	motiondebugshader.Destroy();
 	bloom.DestroyShaders();
 	hbao.Destroy();
 
@@ -679,6 +696,7 @@ void GL3Renderer::Close()
 		CloseFramebuffer();
 
 	DestroyPersistentDrawBuffer();
+	DestroyMotionVectorDraw();
 
 #if defined(SDL3)
 	SDL_GL_DestroyContext(GLContext);

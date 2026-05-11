@@ -161,8 +161,11 @@ int bm_rowsize (int handle,int miplevel);
 // Goes through the bitmap and sees if there is any transparency...if so, flag it!
 int bm_SetBitmapIfTransparent (int handle);
 
-// Saves the passed bitmap handle as a 24 bit uncompressed tga
+// Saves the passed bitmap handle as a 32 bit uncompressed tga
 int bm_SaveBitmapTGA (const char *filename,int handle);
+
+// Saves the passed bitmap handle as an RGBA PNG
+int bm_SaveBitmapPNG(const char *filename, int handle);
 
 // Sets the bitmap priority.  This comes in handy for our 3d hardware
 void bm_set_priority (int handle,int priority);

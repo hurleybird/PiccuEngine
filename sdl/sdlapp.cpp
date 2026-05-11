@@ -19,6 +19,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include "application.h"
+#include "ddio.h"
 #include "mono.h"
 #include "networking.h"
 #include "pserror.h"
@@ -38,15 +39,29 @@ void SDLApplication::do_events()
 		{
 			switch (ev.type)
 			{
+			case SDL_EVENT_WINDOW_FOCUS_GAINED:
+			case SDL_EVENT_WINDOW_RESTORED:
+				activate();
+				ddio_KeyFlush();
+				ddio_MouseQueueFlush();
+				break;
+			case SDL_EVENT_WINDOW_FOCUS_LOST:
+			case SDL_EVENT_WINDOW_MINIMIZED:
+				deactivate();
+				ddio_KeyFlush();
+				ddio_MouseQueueFlush();
+				break;
 			case SDL_EVENT_KEY_DOWN:
 			case SDL_EVENT_KEY_UP:
-				ddio_SDLKeyEvent(ev);
+				if (active())
+					ddio_SDLKeyEvent(ev);
 				break;
 			case SDL_EVENT_MOUSE_MOTION:
 			case SDL_EVENT_MOUSE_BUTTON_DOWN:
 			case SDL_EVENT_MOUSE_BUTTON_UP:
 			case SDL_EVENT_MOUSE_WHEEL:
-				ddio_SDLMouseEvent(ev);
+				if (active())
+					ddio_SDLMouseEvent(ev);
 				break;
 			}
 		}
@@ -115,6 +130,10 @@ void SDLApplication::init()
 	{
 		Error("Failed to create SDL Window! Error: %s", SDL_GetError());
 	}
+	if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS)
+		activate();
+	else
+		deactivate();
 }
 
 void SDLApplication::get_info(void* buffer)

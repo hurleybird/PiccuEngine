@@ -347,6 +347,11 @@ void ReadPlayerControls(game_controls *controls)
 		memset(controls,0,sizeof(game_controls));
 		return;
 	}
+	if (Descent && !Descent->active())
+	{
+		memset(controls, 0, sizeof(game_controls));
+		return;
+	}
 //@@	Control_frametime = Frametime;
 //	keyboard uses game frametime
 // controller uses polled control frametime

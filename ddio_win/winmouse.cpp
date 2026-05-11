@@ -281,6 +281,14 @@ int RawInputHandler(HWND hWnd, unsigned int msg, unsigned int wParam, long lPara
     t_mse_event ev;
     float curtime = timer_GetTime();
 
+    if (GetForegroundWindow() != hWnd) {
+        DDIO_mouse_state.btn_mask = 0;
+        DDIO_mouse_state.dx = 0;
+        DDIO_mouse_state.dy = 0;
+        DDIO_mouse_state.dz = 0;
+        return 0;
+    }
+
     if (DDIO_mouse_state.suspended) {
         DDIO_mouse_state.btn_mask = 0;
         DDIO_mouse_state.dx = 0;

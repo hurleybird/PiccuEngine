@@ -1425,6 +1425,184 @@ int bm_SaveBitmapTGA(const char* filename, int handle)
 	return 1;
 }
 
+static uint png_crc_table[256];
+static bool png_crc_table_ready = false;
+
+static void png_make_crc_table()
+{
+	for (uint n = 0; n < 256; n++)
+	{
+		uint c = n;
+		for (int k = 0; k < 8; k++)
+			c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
+		png_crc_table[n] = c;
+	}
+	png_crc_table_ready = true;
+}
+
+static uint png_update_crc(uint crc, const ubyte* data, int len)
+{
+	if (!png_crc_table_ready)
+		png_make_crc_table();
+
+	for (int i = 0; i < len; i++)
+		crc = png_crc_table[(crc ^ data[i]) & 0xff] ^ (crc >> 8);
+	return crc;
+}
+
+static uint png_adler32(const ubyte* data, int len)
+{
+	uint a = 1;
+	uint b = 0;
+
+	for (int i = 0; i < len; i++)
+	{
+		a = (a + data[i]) % 65521;
+		b = (b + a) % 65521;
+	}
+
+	return (b << 16) | a;
+}
+
+static void png_write_u32(CFILE* fp, uint value)
+{
+	cf_WriteByte(fp, (sbyte)((value >> 24) & 0xff));
+	cf_WriteByte(fp, (sbyte)((value >> 16) & 0xff));
+	cf_WriteByte(fp, (sbyte)((value >> 8) & 0xff));
+	cf_WriteByte(fp, (sbyte)(value & 0xff));
+}
+
+static void png_write_chunk(CFILE* fp, const char type[4], const ubyte* data, int len)
+{
+	png_write_u32(fp, (uint)len);
+	cf_WriteBytes((const ubyte*)type, 4, fp);
+	if (len > 0)
+		cf_WriteBytes(data, len, fp);
+
+	uint crc = 0xffffffffU;
+	crc = png_update_crc(crc, (const ubyte*)type, 4);
+	if (len > 0)
+		crc = png_update_crc(crc, data, len);
+	png_write_u32(fp, crc ^ 0xffffffffU);
+}
+
+static int png_build_stored_zlib(const ubyte* raw, int raw_len, ubyte** out_data, int* out_len)
+{
+	int block_count = (raw_len + 65534) / 65535;
+	int zlib_len = 2 + raw_len + block_count * 5 + 4;
+	ubyte* zlib_data = (ubyte*)mem_malloc(zlib_len);
+	if (!zlib_data)
+		return 0;
+
+	int out_pos = 0;
+	int raw_pos = 0;
+	zlib_data[out_pos++] = 0x78;
+	zlib_data[out_pos++] = 0x01;
+
+	while (raw_pos < raw_len)
+	{
+		int block_len = raw_len - raw_pos;
+		if (block_len > 65535)
+			block_len = 65535;
+
+		bool final_block = (raw_pos + block_len) == raw_len;
+		zlib_data[out_pos++] = final_block ? 1 : 0;
+		zlib_data[out_pos++] = (ubyte)(block_len & 0xff);
+		zlib_data[out_pos++] = (ubyte)((block_len >> 8) & 0xff);
+		ushort nlen = (ushort)~block_len;
+		zlib_data[out_pos++] = (ubyte)(nlen & 0xff);
+		zlib_data[out_pos++] = (ubyte)((nlen >> 8) & 0xff);
+		memcpy(&zlib_data[out_pos], &raw[raw_pos], block_len);
+		out_pos += block_len;
+		raw_pos += block_len;
+	}
+
+	uint adler = png_adler32(raw, raw_len);
+	zlib_data[out_pos++] = (ubyte)((adler >> 24) & 0xff);
+	zlib_data[out_pos++] = (ubyte)((adler >> 16) & 0xff);
+	zlib_data[out_pos++] = (ubyte)((adler >> 8) & 0xff);
+	zlib_data[out_pos++] = (ubyte)(adler & 0xff);
+
+	*out_data = zlib_data;
+	*out_len = out_pos;
+	return 1;
+}
+
+int bm_SaveBitmapPNG(const char* filename, int handle)
+{
+	ASSERT(GameBitmaps[handle].format == BITMAP_FORMAT_1555);
+
+	int width = bm_w(handle, 0);
+	int height = bm_h(handle, 0);
+	if (width <= 0 || height <= 0)
+		return 0;
+
+	int row_bytes = width * 4;
+	int raw_len = (row_bytes + 1) * height;
+	ubyte* raw = (ubyte*)mem_malloc(raw_len);
+	if (!raw)
+		return 0;
+
+	ushort* src_data = (ushort*)bm_data(handle, 0);
+	for (int y = 0; y < height; y++)
+	{
+		ubyte* row = &raw[y * (row_bytes + 1)];
+		row[0] = 0;
+		for (int x = 0; x < width; x++)
+		{
+			ddgr_color color = GR_16_TO_COLOR(src_data[y * width + x]);
+			ubyte* dest = &row[1 + x * 4];
+			dest[0] = (ubyte)GR_COLOR_RED(color);
+			dest[1] = (ubyte)GR_COLOR_GREEN(color);
+			dest[2] = (ubyte)GR_COLOR_BLUE(color);
+			dest[3] = 255;
+		}
+	}
+
+	ubyte* zlib_data = NULL;
+	int zlib_len = 0;
+	if (!png_build_stored_zlib(raw, raw_len, &zlib_data, &zlib_len))
+	{
+		mem_free(raw);
+		return 0;
+	}
+
+	CFILE* fp = (CFILE*)cfopen(filename, "wb");
+	if (fp == NULL)
+	{
+		mprintf((0, "SavePNG:couldn't open %s!\n", filename));
+		mem_free(zlib_data);
+		mem_free(raw);
+		return 0;
+	}
+
+	static const ubyte png_sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+	cf_WriteBytes(png_sig, sizeof(png_sig), fp);
+
+	ubyte ihdr[13];
+	ihdr[0] = (ubyte)((width >> 24) & 0xff);
+	ihdr[1] = (ubyte)((width >> 16) & 0xff);
+	ihdr[2] = (ubyte)((width >> 8) & 0xff);
+	ihdr[3] = (ubyte)(width & 0xff);
+	ihdr[4] = (ubyte)((height >> 24) & 0xff);
+	ihdr[5] = (ubyte)((height >> 16) & 0xff);
+	ihdr[6] = (ubyte)((height >> 8) & 0xff);
+	ihdr[7] = (ubyte)(height & 0xff);
+	ihdr[8] = 8;  // bit depth
+	ihdr[9] = 6;  // RGBA
+	ihdr[10] = 0; // deflate
+	ihdr[11] = 0; // no filter
+	ihdr[12] = 0; // no interlace
+	png_write_chunk(fp, "IHDR", ihdr, sizeof(ihdr));
+	png_write_chunk(fp, "IDAT", zlib_data, zlib_len);
+	png_write_chunk(fp, "IEND", NULL, 0);
+
+	cfclose(fp);
+	mem_free(zlib_data);
+	mem_free(raw);
+	return 1;
+}
+
 // clears bitmap
 void bm_ClearBitmap(int handle)
 {

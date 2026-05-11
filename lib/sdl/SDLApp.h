@@ -30,7 +30,6 @@ extern void con_defer();
 class SDLApplication : public oeApplication
 {
 protected:
-	bool m_AppActive;
 	SDL_Window* m_window;
 	uint32_t m_flags;
 	std::string m_title;

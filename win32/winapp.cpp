@@ -20,6 +20,7 @@
 
 #include "application.h"
 //#include "AppConsole.h"
+#include "ddio.h"
 #include "mono.h"
 #include "networking.h"
 #include "win32res.h"
@@ -545,10 +546,22 @@ tWin32OS oeWin32Application::version(int *major, int *minor, int *build, char *s
 //	This Window Procedure is called from the global WindowProc.
 int oeWin32Application::WndProc( HWnd hwnd, unsigned msg, unsigned wParam, long lParam)
 {
- 	switch (msg)
+	switch (msg)
 	{
 	case WM_ACTIVATEAPP:
-		m_AppActive = wParam ? true : false; 
+		m_AppActive = wParam ? true : false;
+		if (m_AppActive)
+		{
+			ddio_Resume();
+			ddio_KeyFlush();
+			ddio_MouseQueueFlush();
+		}
+		else
+		{
+			ddio_KeyFlush();
+			ddio_MouseQueueFlush();
+			ddio_Suspend();
+		}
 	//	mprintf((0, "WM_ACTIVATEAPP (%u,%l)\n", wParam, lParam));
 		break;
 	}

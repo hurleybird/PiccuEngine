@@ -198,7 +198,7 @@ inline void ResetGamemode()
 
 void SetGamemodeScript(const char *scrfilename,int num_requested_teams=-1);
 
-// Does a screenshot and tells the bitmap lib to save out the picture as a tga
+// Does a screenshot and tells the bitmap lib to save out the picture
 void DoScreenshot ();
 
 // [ISB] Create one of these to force the mouse to capture. Will free when all go out of scope. 

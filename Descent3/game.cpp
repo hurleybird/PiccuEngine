@@ -812,7 +812,15 @@ void EndFrame()
 	}
 }
 
-// Does a screenshot and tells the bitmap lib to save out the picture as a tga
+static bool UseTGAScreenshots()
+{
+	static int use_tga = -1;
+	if (use_tga < 0)
+		use_tga = (FindArg("-screenshottga") || FindArg("-screenshot-tga")) ? 1 : 0;
+	return use_tga != 0;
+}
+
+// Does a screenshot and tells the bitmap lib to save out the picture.
 void DoScreenshot()
 {
 	int bm_handle;
@@ -845,9 +853,11 @@ void DoScreenshot()
 
 	// Find a valid filename
 	count = 1;
+	const bool use_tga = UseTGAScreenshots();
+	const char* extension = use_tga ? "tga" : "png";
 	while (!done)
 	{
-		sprintf(str, "Screenshot%.3d.tga", count);
+		sprintf(str, "Screenshot%.3d.%s", count, extension);
 		ddio_MakePath(filename, User_directory, str, NULL);
 		infile = (CFILE*)cfopen(filename, "rb");
 		if (infile == NULL)
@@ -866,10 +876,14 @@ void DoScreenshot()
 	strcpy(GameBitmaps[bm_handle].name, str);
 
 	// Now save it
-	bm_SaveBitmapTGA(filename, bm_handle);
-	if (Demo_flags != DF_PLAYBACK)
+	int saved = use_tga ? bm_SaveBitmapTGA(filename, bm_handle) : bm_SaveBitmapPNG(filename, bm_handle);
+	if (saved && Demo_flags != DF_PLAYBACK)
 	{
 		AddHUDMessage(TXT_SCRNSHT, filename);
+	}
+	else if (!saved)
+	{
+		AddHUDMessage(TXT_ERRSCRNSHT);
 	}
 
 	// Free memory			

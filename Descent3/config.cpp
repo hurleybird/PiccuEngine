@@ -155,6 +155,51 @@ float ConfigNormalizeBloomIntensity(float intensity)
 	return intensity;
 }
 
+static int ConfigNormalizeHBAOQuality(int quality)
+{
+	if (quality < 0)
+		return 0;
+	if (quality > HBAO_QUALITY_HIGH)
+		return HBAO_QUALITY_HIGH;
+	return quality;
+}
+
+static int ConfigNormalizeHBAOBlur(int blur)
+{
+	if (blur < 0)
+		return 0;
+	if (blur > HBAO_BLUR_WIDE)
+		return HBAO_BLUR_WIDE;
+	return blur;
+}
+
+static float ConfigNormalizeHBAORadius(float radius)
+{
+	if (radius < 0.5f)
+		return 0.5f;
+	if (radius > 32.0f)
+		return 32.0f;
+	return radius;
+}
+
+static float ConfigNormalizeHBAOIntensity(float intensity)
+{
+	if (intensity < 0.0f)
+		return 0.0f;
+	if (intensity > 4.0f)
+		return 4.0f;
+	return intensity;
+}
+
+static float ConfigNormalizeHBAOBias(float bias)
+{
+	if (bias < 0.0f)
+		return 0.0f;
+	if (bias > 0.5f)
+		return 0.5f;
+	return bias;
+}
+
 static int SupersamplingFactorToIndex(int factor)
 {
 	switch (ConfigNormalizeSupersamplingFactor(factor))
@@ -599,7 +644,139 @@ void config_gamma()
 //
 #define RESBUFFER_SIZE 50
 #define IDV_CHANGEWINDOW 10
+#define IDV_HBAOSETTINGS 11
+#define IDV_HBAOAPPLY 12
 #define UID_RESOLUTION 110
+#define HBAO_RADIUS_SLIDER_UNITS 315
+#define HBAO_INTENSITY_SLIDER_UNITS 80
+#define HBAO_BIAS_SLIDER_UNITS 50
+
+static void ApplyHBAOSettingsFromUI(bool* enabled, int* quality, int* blur,
+	short* radius, short* intensity, short* bias,
+	const tSliderSettings& radius_settings,
+	const tSliderSettings& intensity_settings,
+	const tSliderSettings& bias_settings)
+{
+	if (enabled)
+		Render_preferred_state.hbao_enabled = *enabled;
+	if (quality)
+		Render_preferred_state.hbao_quality = (ubyte)ConfigNormalizeHBAOQuality(*quality);
+	if (blur)
+		Render_preferred_state.hbao_blur = (ubyte)ConfigNormalizeHBAOBlur(*blur);
+	if (radius)
+	{
+		Render_preferred_state.hbao_radius = ConfigNormalizeHBAORadius(
+			CALC_SLIDER_FLOAT_VALUE(*radius, radius_settings.min_val.f, radius_settings.max_val.f, HBAO_RADIUS_SLIDER_UNITS));
+	}
+	if (intensity)
+	{
+		Render_preferred_state.hbao_intensity = ConfigNormalizeHBAOIntensity(
+			CALC_SLIDER_FLOAT_VALUE(*intensity, intensity_settings.min_val.f, intensity_settings.max_val.f, HBAO_INTENSITY_SLIDER_UNITS));
+	}
+	if (bias)
+	{
+		Render_preferred_state.hbao_bias = ConfigNormalizeHBAOBias(
+			CALC_SLIDER_FLOAT_VALUE(*bias, bias_settings.min_val.f, bias_settings.max_val.f, HBAO_BIAS_SLIDER_UNITS));
+	}
+}
+
+static void config_hbao()
+{
+	newuiTiledWindow hbao_wnd;
+	newuiSheet* sheet;
+	renderer_preferred_state initial_state = Render_preferred_state;
+	bool* enabled;
+	int* quality;
+	int* blur;
+	short* radius;
+	short* intensity;
+	short* bias;
+	tSliderSettings radius_settings = {};
+	tSliderSettings intensity_settings = {};
+	tSliderSettings bias_settings = {};
+	int res;
+
+	hbao_wnd.Create("HBAO Settings", 0, 0, 360, 336);
+	sheet = hbao_wnd.GetSheet();
+
+	sheet->NewGroup("HBAO", 0, 0);
+	enabled = sheet->AddLongCheckBox("Enable HBAO", Render_preferred_state.hbao_enabled);
+
+	sheet->NewGroup("Quality", 0, 40, NEWUI_ALIGN_HORIZ);
+	quality = sheet->AddFirstRadioButton("Low");
+	sheet->AddRadioButton("Medium");
+	sheet->AddRadioButton("High");
+	*quality = ConfigNormalizeHBAOQuality(Render_preferred_state.hbao_quality);
+
+	sheet->NewGroup("Blur", 0, 90, NEWUI_ALIGN_HORIZ);
+	blur = sheet->AddFirstRadioButton("None");
+	sheet->AddRadioButton("Narrow");
+	sheet->AddRadioButton("Medium");
+	sheet->AddRadioButton("Wide");
+	*blur = ConfigNormalizeHBAOBlur(Render_preferred_state.hbao_blur);
+
+	radius_settings.min_val.f = 0.5f;
+	radius_settings.max_val.f = 32.0f;
+	radius_settings.type = SLIDER_UNITS_FLOAT;
+	sheet->NewGroup(NULL, 0, 140);
+	radius = sheet->AddSlider("Radius", HBAO_RADIUS_SLIDER_UNITS,
+		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAORadius(Render_preferred_state.hbao_radius),
+			&radius_settings, HBAO_RADIUS_SLIDER_UNITS),
+		&radius_settings);
+
+	intensity_settings.min_val.f = 0.0f;
+	intensity_settings.max_val.f = 4.0f;
+	intensity_settings.type = SLIDER_UNITS_FLOAT;
+	sheet->NewGroup(NULL, 0, 185);
+	intensity = sheet->AddSlider("Intensity", HBAO_INTENSITY_SLIDER_UNITS,
+		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOIntensity(Render_preferred_state.hbao_intensity),
+			&intensity_settings, HBAO_INTENSITY_SLIDER_UNITS),
+		&intensity_settings);
+
+	bias_settings.min_val.f = 0.0f;
+	bias_settings.max_val.f = 0.5f;
+	bias_settings.type = SLIDER_UNITS_FLOAT;
+	sheet->NewGroup(NULL, 0, 230);
+	bias = sheet->AddSlider("Bias", HBAO_BIAS_SLIDER_UNITS,
+		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOBias(Render_preferred_state.hbao_bias),
+			&bias_settings, HBAO_BIAS_SLIDER_UNITS),
+		&bias_settings);
+
+	sheet->NewGroup(NULL, 78, 282, NEWUI_ALIGN_HORIZ);
+	sheet->AddButton(TXT_APPLY, IDV_HBAOAPPLY);
+	sheet->AddText(" ");
+	sheet->AddButton(TXT_OK, UID_OK);
+	sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+	hbao_wnd.Open();
+
+	do
+	{
+		res = hbao_wnd.DoUI();
+		if (res == IDV_HBAOAPPLY)
+		{
+			ApplyHBAOSettingsFromUI(enabled, quality, blur, radius, intensity, bias,
+				radius_settings, intensity_settings, bias_settings);
+			rend_SetPreferredState(&Render_preferred_state);
+		}
+	} while (res != UID_OK && res != UID_CANCEL && res != NEWUIRES_FORCEQUIT);
+
+	if (res == UID_OK)
+	{
+		ApplyHBAOSettingsFromUI(enabled, quality, blur, radius, intensity, bias,
+			radius_settings, intensity_settings, bias_settings);
+	}
+	else
+	{
+		Render_preferred_state = initial_state;
+	}
+
+	rend_SetPreferredState(&Render_preferred_state);
+
+	hbao_wnd.Close();
+	hbao_wnd.Destroy();
+}
+
 struct video_menu;
 static video_menu* Active_video_menu = NULL;
 static void SyncActiveVideoMenuDisplayMode();
@@ -614,8 +791,6 @@ struct video_menu
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
 	bool* hbao_enabled;
-	int* hbao_quality;
-	int* hbao_blur;
 	bool* vsync;
 
 	int* resolution;									// all resolutions
@@ -723,22 +898,6 @@ struct video_menu
 			Render_preferred_state.hbao_enabled = *hbao_enabled;
 			changed = true;
 		}
-		if (hbao_quality && sheet->HasChanged(hbao_quality))
-		{
-			int q = *hbao_quality;
-			if (q < 0) q = 0;
-			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
-			Render_preferred_state.hbao_quality = (ubyte)q;
-			changed = true;
-		}
-		if (hbao_blur && sheet->HasChanged(hbao_blur))
-		{
-			int b = *hbao_blur;
-			if (b < 0) b = 0;
-			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
-			Render_preferred_state.hbao_blur = (ubyte)b;
-			changed = true;
-		}
 		if (vsync && sheet->HasChanged(vsync))
 		{
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
@@ -824,30 +983,9 @@ struct video_menu
 		sheet->AddRadioButton("4x");
 		*supersampling = SupersamplingFactorToIndex(Render_preferred_state.supersampling_factor);
 
-		// HBAO (Horizon-Based Ambient Occlusion)
 		sheet->NewGroup("HBAO", 184, 188);
 		hbao_enabled = sheet->AddLongCheckBox("Enable HBAO", Render_preferred_state.hbao_enabled);
-		sheet->NewGroup("Quality", 184, 224, NEWUI_ALIGN_HORIZ);
-		hbao_quality = sheet->AddFirstRadioButton("Low");
-		sheet->AddRadioButton("Medium");
-		sheet->AddRadioButton("High");
-		{
-			int q = Render_preferred_state.hbao_quality;
-			if (q < 0) q = 0;
-			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
-			*hbao_quality = q;
-		}
-		sheet->NewGroup("Blur", 184, 254, NEWUI_ALIGN_HORIZ);
-		hbao_blur = sheet->AddFirstRadioButton("None");
-		sheet->AddRadioButton("Narrow");
-		sheet->AddRadioButton("Medium");
-		sheet->AddRadioButton("Wide");
-		{
-			int b = Render_preferred_state.hbao_blur;
-			if (b < 0) b = 0;
-			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
-			*hbao_blur = b;
-		}
+		sheet->AddLongButton("HBAO settings...", IDV_HBAOSETTINGS);
 
 		return sheet;
 	};
@@ -865,20 +1003,6 @@ struct video_menu
 			Render_preferred_state.bloom_enabled = *bloom_enabled;
 		if (hbao_enabled)
 			Render_preferred_state.hbao_enabled = *hbao_enabled;
-		if (hbao_quality)
-		{
-			int q = *hbao_quality;
-			if (q < 0) q = 0;
-			if (q > HBAO_QUALITY_HIGH) q = HBAO_QUALITY_HIGH;
-			Render_preferred_state.hbao_quality = (ubyte)q;
-		}
-		if (hbao_blur)
-		{
-			int b = *hbao_blur;
-			if (b < 0) b = 0;
-			if (b > HBAO_BLUR_WIDE) b = HBAO_BLUR_WIDE;
-			Render_preferred_state.hbao_blur = (ubyte)b;
-		}
 		if (vsync)
 			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (antialiasing)
@@ -991,6 +1115,14 @@ struct video_menu
 		break;
 		case IDV_AUTOGAMMA:
 			config_gamma();
+			break;
+		case IDV_HBAOSETTINGS:
+			config_hbao();
+			if (hbao_enabled)
+			{
+				*hbao_enabled = Render_preferred_state.hbao_enabled;
+				sheet->UpdateChanges();
+			}
 			break;
 		}
 	};

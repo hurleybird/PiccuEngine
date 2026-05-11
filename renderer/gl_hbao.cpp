@@ -31,10 +31,6 @@ namespace
 		0.437980f, 0.620309f, 0.062196f, 0.119485f, 0.235646f, 0.795892f, 0.044437f, 0.617311f,
 	};
 
-	//Six temporal rotation offsets (in revolutions); pick by frame_counter % 6.
-	const float kTemporalRotations[6] = { 60.f, 300.f, 180.f, 240.f, 120.f, 0.f };
-	const float kTemporalJitters[4] = { 0.f, 0.5f, 0.25f, 0.75f };
-
 	int QualityDirections(int q)
 	{
 		switch (q)
@@ -251,11 +247,11 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	float neg_inv_r2 = -1.0f / (radius * radius);
 	float multiplier = (2.0f * (1.0f / (1.0f - bias))) / (float)(steps * directions);
 
-	//Temporal: rotate the noise pattern across frames so the dither converges
-	//over time. Useful as long as the player keeps moving.
-	frame_counter = (frame_counter + 1) & 0xFFFFFF;
-	float rotation = kTemporalRotations[frame_counter % 6] / 360.0f;
-	float jitter = kTemporalJitters[frame_counter % 4];
+	//Keep AO sampling stable frame-to-frame. The old temporal rotation/jitter
+	//changed the sampling pattern every frame without any accumulation pass,
+	//which showed up as visible flicker.
+	float rotation = 0.0f;
+	float jitter = 0.0f;
 
 	//-------------------------------------------------------------------------
 	// Pass 1: AO into ao_framebuffer.

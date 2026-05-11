@@ -301,6 +301,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 
 	int blur = pref_state.hbao_blur;
 	if (!temporal_settings_valid ||
+		temporal_enabled != pref_state.hbao_temporal ||
 		temporal_quality != quality ||
 		temporal_blur != blur ||
 		temporal_radius != radius ||
@@ -309,6 +310,7 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	{
 		temporal_valid = false;
 		temporal_settings_valid = true;
+		temporal_enabled = pref_state.hbao_temporal;
 		temporal_quality = quality;
 		temporal_blur = blur;
 		temporal_radius = radius;
@@ -340,7 +342,16 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	int temporal_phase = frame_counter & 7;
 	float rotation = kTemporalRotations[temporal_phase];
 	float jitter = kTemporalJitters[temporal_phase];
-	frame_counter++;
+	if (!pref_state.hbao_temporal)
+	{
+		rotation = 0.0f;
+		jitter = 0.5f;
+		temporal_valid = false;
+	}
+	else
+	{
+		frame_counter++;
+	}
 
 	//-------------------------------------------------------------------------
 	// Pass 1: AO into ao_framebuffer.
@@ -417,7 +428,8 @@ void HBAOResources::Apply(Framebuffer* source, const renderer_preferred_state& p
 	// Pass 3: Reproject and accumulate AO history.
 	//-------------------------------------------------------------------------
 	ColorFramebuffer* apply_source = blurred;
-	bool temporal_ready = current_inv_view_projection != nullptr &&
+	bool temporal_ready = pref_state.hbao_temporal &&
+		current_inv_view_projection != nullptr &&
 		previous_view_projection != nullptr &&
 		has_previous_view_projection &&
 		temporal_shader.Handle() != 0;

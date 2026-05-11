@@ -650,7 +650,7 @@ void config_gamma()
 #define HBAO_INTENSITY_SLIDER_UNITS 80
 #define HBAO_BIAS_SLIDER_UNITS 50
 
-static void ApplyHBAOSettingsFromUI(bool* enabled, int* quality, int* blur,
+static void ApplyHBAOSettingsFromUI(bool* enabled, bool* temporal, int* quality, int* blur,
 	short* radius, short* intensity, short* bias,
 	const tSliderSettings& radius_settings,
 	const tSliderSettings& intensity_settings,
@@ -658,6 +658,8 @@ static void ApplyHBAOSettingsFromUI(bool* enabled, int* quality, int* blur,
 {
 	if (enabled)
 		Render_preferred_state.hbao_enabled = *enabled;
+	if (temporal)
+		Render_preferred_state.hbao_temporal = *temporal;
 	if (quality)
 		Render_preferred_state.hbao_quality = (ubyte)ConfigNormalizeHBAOQuality(*quality);
 	if (blur)
@@ -684,6 +686,7 @@ static void config_hbao()
 	newuiTiledWindow hbao_wnd;
 	newuiSheet* sheet;
 	bool* enabled;
+	bool* temporal;
 	int* quality;
 	int* blur;
 	short* radius;
@@ -694,19 +697,20 @@ static void config_hbao()
 	tSliderSettings bias_settings = {};
 	int res;
 
-	hbao_wnd.Create("HBAO Settings", 0, 0, 360, 336);
+	hbao_wnd.Create("HBAO Settings", 0, 0, 360, 368);
 	sheet = hbao_wnd.GetSheet();
 
 	sheet->NewGroup("HBAO", 0, 0);
 	enabled = sheet->AddLongCheckBox("Enable HBAO", Render_preferred_state.hbao_enabled);
+	temporal = sheet->AddLongCheckBox("Temporal accumulation", Render_preferred_state.hbao_temporal);
 
-	sheet->NewGroup("Quality", 0, 40, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup("Quality", 0, 68, NEWUI_ALIGN_HORIZ);
 	quality = sheet->AddFirstRadioButton("Low");
 	sheet->AddRadioButton("Medium");
 	sheet->AddRadioButton("High");
 	*quality = ConfigNormalizeHBAOQuality(Render_preferred_state.hbao_quality);
 
-	sheet->NewGroup("Blur", 0, 90, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup("Blur", 0, 118, NEWUI_ALIGN_HORIZ);
 	blur = sheet->AddFirstRadioButton("None");
 	sheet->AddRadioButton("Narrow");
 	sheet->AddRadioButton("Medium");
@@ -716,7 +720,7 @@ static void config_hbao()
 	radius_settings.min_val.f = 0.5f;
 	radius_settings.max_val.f = 32.0f;
 	radius_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 140);
+	sheet->NewGroup(NULL, 0, 168);
 	radius = sheet->AddSlider("Radius", HBAO_RADIUS_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAORadius(Render_preferred_state.hbao_radius),
 			&radius_settings, HBAO_RADIUS_SLIDER_UNITS),
@@ -725,7 +729,7 @@ static void config_hbao()
 	intensity_settings.min_val.f = 0.0f;
 	intensity_settings.max_val.f = 4.0f;
 	intensity_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 185);
+	sheet->NewGroup(NULL, 0, 213);
 	intensity = sheet->AddSlider("Intensity", HBAO_INTENSITY_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOIntensity(Render_preferred_state.hbao_intensity),
 			&intensity_settings, HBAO_INTENSITY_SLIDER_UNITS),
@@ -734,13 +738,13 @@ static void config_hbao()
 	bias_settings.min_val.f = 0.0f;
 	bias_settings.max_val.f = 0.5f;
 	bias_settings.type = SLIDER_UNITS_FLOAT;
-	sheet->NewGroup(NULL, 0, 230);
+	sheet->NewGroup(NULL, 0, 258);
 	bias = sheet->AddSlider("Bias", HBAO_BIAS_SLIDER_UNITS,
 		CALC_SLIDER_POS_FLOAT(ConfigNormalizeHBAOBias(Render_preferred_state.hbao_bias),
 			&bias_settings, HBAO_BIAS_SLIDER_UNITS),
 		&bias_settings);
 
-	sheet->NewGroup(NULL, 78, 282, NEWUI_ALIGN_HORIZ);
+	sheet->NewGroup(NULL, 78, 314, NEWUI_ALIGN_HORIZ);
 	sheet->AddButton(TXT_OK, UID_OK);
 
 	hbao_wnd.Open();
@@ -748,7 +752,7 @@ static void config_hbao()
 	do
 	{
 		res = hbao_wnd.DoUI();
-		ApplyHBAOSettingsFromUI(enabled, quality, blur, radius, intensity, bias,
+		ApplyHBAOSettingsFromUI(enabled, temporal, quality, blur, radius, intensity, bias,
 			radius_settings, intensity_settings, bias_settings);
 		rend_SetPreferredState(&Render_preferred_state);
 	} while (res != UID_OK && res != NEWUIRES_FORCEQUIT);
@@ -815,6 +819,7 @@ struct video_menu
 			return false;
 
 		void (*old_callback)() = GetUICallback();
+		bool old_cursor_visible = ui_IsCursorVisible();
 
 		Game_fullscreen = *fullscreen;
 		Game_window_res_width = window_width;
@@ -824,6 +829,8 @@ struct video_menu
 		SetScreenMode(GetScreenMode(), true);
 		if (old_callback)
 			SetUICallback(old_callback);
+		if (old_cursor_visible)
+			ui_ShowCursor();
 		if (GetScreenMode() == SM_GAME)
 			Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 		recenter_parent_menu();

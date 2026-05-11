@@ -383,12 +383,15 @@ void ToggleFullscreenMode()
 {
 	int screen_mode = GetScreenMode();
 	void (*old_callback)() = GetUICallback();
+	bool old_cursor_visible = ui_IsCursorVisible();
 
 	Game_fullscreen = !Game_fullscreen;
 	ForceFullGameWindowOnNextGameMode();
 	SetScreenMode(screen_mode, true);
 	if (old_callback)
 		SetUICallback(old_callback);
+	if (old_cursor_visible)
+		ui_ShowCursor();
 	if (GetScreenMode() == SM_GAME)
 		Current_pilot.set_hud_data(NULL, NULL, NULL, &Game_window_w, &Game_window_h);
 	if (Display_mode_changed_callback)

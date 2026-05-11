@@ -373,6 +373,7 @@ void SaveGameSettings()
 	sprintf(tempbuffer, "%f", Render_preferred_state.bloom_spread);
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_hbao_enabled", Render_preferred_state.hbao_enabled);
+	Database->write("RS_hbao_temporal", Render_preferred_state.hbao_temporal);
 	Database->write("RS_hbao_quality", Render_preferred_state.hbao_quality);
 	Database->write("RS_hbao_blur", Render_preferred_state.hbao_blur);
 	sprintf(tempbuffer, "%f", Render_preferred_state.hbao_radius);
@@ -501,6 +502,7 @@ void LoadGameSettings()
 	Render_preferred_state.bloom_intensity = 0.75f;
 	Render_preferred_state.bloom_spread = 0.75f;
 	Render_preferred_state.hbao_enabled = false;
+	Render_preferred_state.hbao_temporal = true;
 	Render_preferred_state.hbao_quality = HBAO_QUALITY_MEDIUM;
 	Render_preferred_state.hbao_blur = HBAO_BLUR_MEDIUM;
 	Render_preferred_state.hbao_radius = 4.0f;
@@ -645,6 +647,7 @@ void LoadGameSettings()
 		Render_preferred_state.bloom_intensity = ConfigNormalizeBloomIntensity((float)strtod(bloom_intensity_value, &stoptemp));
 
 	Database->read("RS_hbao_enabled", &Render_preferred_state.hbao_enabled);
+	Database->read("RS_hbao_temporal", &Render_preferred_state.hbao_temporal);
 	tempint = Render_preferred_state.hbao_quality;
 	Database->read_int("RS_hbao_quality", &tempint);
 	if (tempint < 0) tempint = 0;

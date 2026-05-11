@@ -81,6 +81,44 @@ int N_extensions;
 library *Libraries=NULL;
 int lib_handle=0;
 void cf_Close();
+
+struct open_cfile_node
+{
+	CFILE *file;
+	open_cfile_node *next;
+};
+
+static open_cfile_node *OpenCFiles = NULL;
+
+static CFILE *cf_RegisterOpenFile(CFILE *cfp)
+{
+	open_cfile_node *node = (open_cfile_node *)mem_malloc(sizeof(*node));
+	if (!node)
+		Error("Out of memory in cf_RegisterOpenFile()");
+	node->file = cfp;
+	node->next = OpenCFiles;
+	OpenCFiles = node;
+	return cfp;
+}
+
+static bool cf_UnregisterOpenFile(CFILE *cfp)
+{
+	open_cfile_node *prev = NULL;
+	for (open_cfile_node *node = OpenCFiles; node; prev = node, node = node->next)
+	{
+		if (node->file == cfp)
+		{
+			if (prev)
+				prev->next = node->next;
+			else
+				OpenCFiles = node->next;
+			mem_free(node);
+			return true;
+		}
+	}
+	return false;
+}
+
 //Structure thrown on disk error
 cfile_error cfe;
 //The message for unexpected end of file
@@ -217,6 +255,12 @@ void cf_Close()
 		mem_free(Libraries);
 		Libraries = next;
 	}
+	while (OpenCFiles)
+	{
+		open_cfile_node *next_open = OpenCFiles->next;
+		mem_free(OpenCFiles);
+		OpenCFiles = next_open;
+	}
 }
 
 //Specify a directory to look in for files
@@ -341,7 +385,7 @@ CFILE *cf_OpenFileInLibrary(const char *filename,int libhandle)
   	cfile->flags = 0;
   	r = fseek(fp,cfile->lib_offset,SEEK_SET);
   	ASSERT(r == 0);
-  	return cfile;
+  	return cf_RegisterOpenFile(cfile);
 }
 
 //searches through the open HOG files, and opens a file if it finds it in any of the libs
@@ -404,7 +448,7 @@ CFILE *open_file_in_lib(const char *filename)
   			cfile->flags = 0;
   			r = fseek(fp,cfile->lib_offset,SEEK_SET);
   			ASSERT(r == 0);
-  			return cfile;
+  			return cf_RegisterOpenFile(cfile);
 		}
 		lib = lib->next;
 	}
@@ -706,7 +750,7 @@ CFILE *open_file_in_directory(const char *filename,const char *mode,const char *
 		cfile->lib_offset = 0;		//0 means on disk, not in HOG
 		cfile->position = 0;
 		cfile->flags=0;
-		return cfile;
+		return cf_RegisterOpenFile(cfile);
 	}else
 	{
 		// try different cases of the filename
@@ -733,7 +777,7 @@ CFILE *open_file_in_directory(const char *filename,const char *mode,const char *
 			cfile->lib_offset = 0;		//0 means on disk, not in HOG
 			cfile->position = 0;
 			cfile->flags=0;
-			return cfile;
+			return cf_RegisterOpenFile(cfile);
 		}
 	}
 #else
@@ -754,7 +798,7 @@ CFILE *open_file_in_directory(const char *filename,const char *mode,const char *
 		cfile->lib_offset = 0; //0 means on disk, not in HOG
 		cfile->position = 0;
 		cfile->flags=0;
-		return cfile;
+		return cf_RegisterOpenFile(cfile);
 	}
 #endif
 }
@@ -829,6 +873,14 @@ int cfilelength( CFILE *cfp )
 //Parameters:  cfile - the file pointer returned by cfopen()
 void cfclose( CFILE * cfp )
 {
+	if (!cfp)
+		return;
+	if (!cf_UnregisterOpenFile(cfp))
+	{
+		mprintf((0, "cfclose: ignoring invalid or already closed CFILE %p\n", cfp));
+		return;
+	}
+
 	//Either give the file back to the library, or close it
 	if (cfp->lib_handle != -1) {
 		library *lib;

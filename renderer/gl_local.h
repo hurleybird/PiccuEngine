@@ -219,7 +219,7 @@ class GL3Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, HBAO_QUALITY_MEDIUM, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, true, HBAO_QUALITY_MEDIUM, HBAO_BLUR_MEDIUM, 4.0f, 1.0f, 0.1f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;

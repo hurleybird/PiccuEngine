@@ -254,6 +254,7 @@ struct HBAOResources
 	uint32_t temporal_index = 0;
 	bool temporal_valid = false;
 	bool temporal_settings_valid = false;
+	bool temporal_enabled = true;
 	int temporal_quality = -1;
 	int temporal_blur = -1;
 	float temporal_radius = -1.0f;

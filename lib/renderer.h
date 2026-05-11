@@ -280,6 +280,7 @@ struct renderer_preferred_state
 	float bloom_spread;
 
 	bool hbao_enabled;       //Master HBAO on/off
+	bool hbao_temporal;      //Use per-frame jitter plus temporal accumulation
 	ubyte hbao_quality;      //hbao_quality enum
 	ubyte hbao_blur;         //hbao_blur enum
 	float hbao_radius;       //World-space sample radius in map units (1..16-ish)

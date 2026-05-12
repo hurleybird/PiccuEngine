@@ -318,7 +318,7 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_DEPTH_COMPONENT32F, width, height, GL_FALSE);
 
 		glBindTexture(GL_TEXTURE_2D, m_subcolorname);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -345,7 +345,7 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 	else
 	{
 		glBindTexture(GL_TEXTURE_2D, m_colorname);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -369,6 +369,38 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 		return false;
 	}
 	return true;
+}
+
+void Framebuffer::ClearAlphaToZero()
+{
+	if (m_name == 0)
+		return;
+
+	GLboolean color_mask[4];
+	GLboolean scissor_enabled = glIsEnabled(GL_SCISSOR_TEST);
+	GLfloat clear_color[4];
+	GLint old_draw = 0;
+	GLint old_draw_buffer = 0;
+	glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+	glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+	glGetIntegerv(GL_DRAW_BUFFER, &old_draw_buffer);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_name);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (scissor_enabled)
+		glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+	glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
+	if (scissor_enabled)
+		glEnable(GL_SCISSOR_TEST);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+	glDrawBuffer(old_draw_buffer);
+	MarkColorDirty();
 }
 
 void Framebuffer::Destroy()
@@ -478,8 +510,10 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 
 	glBindVertexArray(fbVAOName);
 	GLint oldviewport[4];
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
 	glGetIntegerv(GL_VIEWPORT, oldviewport);
 	glViewport(x, y, w, h);
+	glDisable(GL_BLEND);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -522,6 +556,7 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
 	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
+	GL_SetEnabledState(GL_BLEND, blend_enabled);
 
 	rend_RestoreLegacy();
 }
@@ -541,8 +576,10 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 
 	glBindVertexArray(fbVAOName);
 	GLint oldviewport[4];
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
 	glGetIntegerv(GL_VIEWPORT, oldviewport);
 	glViewport(x, y, w, h);
+	glDisable(GL_BLEND);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -588,6 +625,7 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
 	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
+	GL_SetEnabledState(GL_BLEND, blend_enabled);
 
 	rend_RestoreLegacy();
 }

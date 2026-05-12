@@ -271,11 +271,8 @@ const char* bloomCompositeFragmentSrc =
 "void main()\n"
 "{\n"
 "	vec4 sourcecolor = texture(heh, outuv);\n"
-"	vec3 scene_color = texture(scene_source, outuv).rgb;\n"
 "	vec3 bloomcolor = texture(bloom, outuv).rgb * bloom_intensity;\n"
-"	vec3 changed = abs(sourcecolor.rgb - scene_color);\n"
-"	float changed_amount = max(max(changed.r, changed.g), changed.b);\n"
-"	float scene_mask = 1.0 - step(0.5 / 255.0, changed_amount);\n"
+"	float scene_mask = 1.0 - clamp(sourcecolor.a, 0.0, 1.0);\n"
 "	color = vec4(pow(max(sourcecolor.rgb + bloomcolor * scene_mask, vec3(0.0)), vec3(gamma)), 1.0);\n"
 "}\n"
 "";
@@ -295,10 +292,8 @@ const char* hbaoDeferredCompositeFragmentSrc =
 "	vec4 final_color = texture(final_source, outuv);\n"
 "	vec3 scene_color = texture(scene_source, outuv).rgb;\n"
 "	vec3 ao_scene_color = texture(ao_scene_source, outuv).rgb;\n"
-"	vec3 changed = abs(final_color.rgb - scene_color);\n"
-"	float changed_amount = max(max(changed.r, changed.g), changed.b);\n"
-"	float scene_mask = 1.0 - step(0.5 / 255.0, changed_amount);\n"
-"	color = vec4(mix(final_color.rgb, ao_scene_color, scene_mask), final_color.a);\n"
+"	float scene_mask = 1.0 - clamp(final_color.a, 0.0, 1.0);\n"
+"	color = vec4(max(final_color.rgb + (ao_scene_color - scene_color) * scene_mask, vec3(0.0)), final_color.a);\n"
 "}\n"
 "";
 

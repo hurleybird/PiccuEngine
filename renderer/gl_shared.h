@@ -121,6 +121,9 @@ public:
 	void MarkColorDirty() { m_subcolor_dirty = true; }
 	void MarkDepthDirty() { m_subdepth_dirty = true; }
 	void MarkAllDirty() { m_subcolor_dirty = true; m_subdepth_dirty = true; }
+	//Clears only the color attachment alpha channel. Used after the scene
+	//capture so later cockpit/HUD draws can accumulate overlay coverage.
+	void ClearAlphaToZero();
 	//Blits to the target framebuffer using glBlitFramebuffer.
 	//Will set current read framebuffer to m_name.
 	void BlitToRaw(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, GLenum filter = GL_NEAREST);

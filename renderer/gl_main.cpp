@@ -610,6 +610,9 @@ void GL3Renderer::CaptureBloomSource()
 		hbao_scene_valid = true;
 	}
 
+	framebuffers[framebuffer_current_draw].ClearAlphaToZero();
+	hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
+
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
 	ShaderProgram::ClearBinding();
@@ -955,7 +958,7 @@ void GL3Renderer::SetAlphaType(sbyte atype)
 		break;
 	case AT_CONSTANT:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_TEXTURE:
 		SetAlphaValue(255);
@@ -966,40 +969,40 @@ void GL3Renderer::SetAlphaType(sbyte atype)
 	case AT_CONSTANT_TEXTURE_VERTEX:
 	case AT_TEXTURE_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_CONSTANT_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_LIGHTMAP_BLEND:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		glBlendFuncSeparate(GL_DST_COLOR, GL_ZERO, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_SATURATE_TEXTURE:
 	case AT_LIGHTMAP_BLEND_SATURATE:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_SATURATE_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_SATURATE_CONSTANT_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_SATURATE_TEXTURE_VERTEX:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		break;
 	case AT_SPECULAR:
 		SetAlwaysAlpha(false);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
 		//hack
 		OpenGL_state.cur_texture_quality = 2;

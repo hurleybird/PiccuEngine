@@ -54,48 +54,51 @@
 #include "d3music.h"
 #include "gameloop.h"
 
+#if defined(SDL3)
+#include <SDL3/SDL_video.h>
+#elif defined(WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
+
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
 #define STAT_SCORE STAT_TIMER
 
-struct newVideoResolution
+static const int Config_base_vertical_resolutions[] = {
+	384, 480, 540, 600, 720, 768, 800, 960, 1050, 1080, 1200, 1440, 1600, 2160
+};
+
+struct ConfigAspectRatio
 {
 	int width;
 	int height;
 	const char* name;
-} New_video_res_list[] = {
-	{512,384, "512x384"},
-	{640,480, "640x480"},
-	{800,600, "800x600"},
-	{960,720, "960x720"},
-	{1024,768, "1024x768"},
-	{1280,960, "1280x960"},
-	{1600,1200, "1600x1200"},
-	//16:9
-	{1280,720, "1280x720"},
-	{1366,768, "1366x768"},
-	{1368,768, "1368x768"},
-	{1680,1050, "1680x1050"},
-	{1920,1080, "1920x1080"},
-	{2560,1440, "2560x1440"},
-	{3840,2160, "3840x2160"},
-	//16:10
-	{1280,800, "1280x800"},
-	{1920,1200, "1920x1200"},
-	{2560,1600, "2560x1600"},
-	//Ultrawide
-	{2560,1080, "2560x1080"},
-	{2880,1200, "2800x1200"},
-	{3440,1440, "3440x1440"},
-	{3840,1600, "3840x1600"}
 };
 
-#define NUM_RESOLUTION sizeof(New_video_res_list) / sizeof(New_video_res_list[0])
+enum
+{
+	CONFIG_ASPECT_5_4,
+	CONFIG_ASPECT_4_3,
+	CONFIG_ASPECT_16_10,
+	CONFIG_ASPECT_16_9,
+	CONFIG_ASPECT_COUNT
+};
+
+static const ConfigAspectRatio Config_aspect_ratios[CONFIG_ASPECT_COUNT] = {
+	{5, 4, "5:4"},
+	{4, 3, "4:3"},
+	{16, 10, "16:10"},
+	{16, 9, "16:9"}
+};
 
 int Game_video_resolution = 1;
-int Game_window_res_width = 640, Game_window_res_height = 480;
+int Game_window_res_width = 1920, Game_window_res_height = 1080;
+int Game_window_aspect = CONFIG_ASPECT_16_9;
 bool Game_fullscreen = false;
 float Hud_text_scale = 1.0f;
 float Render_FOV_desired = 72;
@@ -613,8 +616,265 @@ void config_gamma()
 // VIDEO MENU
 //
 #define RESBUFFER_SIZE 50
+#define ASPECTBUFFER_SIZE 32
 #define IDV_CHANGEWINDOW 10
+#define IDV_CHANGEASPECT 11
 #define UID_RESOLUTION 110
+#define UID_ASPECT 111
+
+static int ConfigRoundAspectWidth(int height, int aspect)
+{
+	if (aspect < 0 || aspect >= CONFIG_ASPECT_COUNT)
+		aspect = CONFIG_ASPECT_4_3;
+
+	int width = (height * Config_aspect_ratios[aspect].width +
+		Config_aspect_ratios[aspect].height / 2) / Config_aspect_ratios[aspect].height;
+	if (width & 1)
+		width++;
+	return width;
+}
+
+static bool ConfigAspectFitsDisplay(int aspect, int height, int display_width, int display_height)
+{
+	if (aspect < 0 || aspect >= CONFIG_ASPECT_COUNT || height <= 0)
+		return false;
+	if (display_width > 0 && ConfigRoundAspectWidth(height, aspect) > display_width)
+		return false;
+	if (display_height > 0 && height > display_height)
+		return false;
+	return true;
+}
+
+static int ConfigAspectFromSize(int width, int height)
+{
+	if (width <= 0 || height <= 0)
+		return CONFIG_ASPECT_4_3;
+
+	int best = CONFIG_ASPECT_4_3;
+	int best_error = 0x7fffffff;
+	for (int i = 0; i < CONFIG_ASPECT_COUNT; i++)
+	{
+		int error = abs(width * Config_aspect_ratios[i].height -
+			height * Config_aspect_ratios[i].width);
+		if (error < best_error)
+		{
+			best_error = error;
+			best = i;
+		}
+	}
+	return best;
+}
+
+static int ConfigBestAspectForDisplay(int desired_aspect, int height, int display_width, int display_height)
+{
+	if (ConfigAspectFitsDisplay(desired_aspect, height, display_width, display_height))
+		return desired_aspect;
+
+	for (int i = CONFIG_ASPECT_COUNT - 1; i >= 0; i--)
+	{
+		if (ConfigAspectFitsDisplay(i, height, display_width, display_height))
+			return i;
+	}
+
+	return CONFIG_ASPECT_5_4;
+}
+
+static int ConfigAspectOrderIndex(int aspect)
+{
+	switch (aspect)
+	{
+	case CONFIG_ASPECT_16_9:
+		return 0;
+	case CONFIG_ASPECT_16_10:
+		return 1;
+	case CONFIG_ASPECT_4_3:
+		return 2;
+	case CONFIG_ASPECT_5_4:
+	default:
+		return 3;
+	}
+}
+
+static int ConfigAspectFromOrderIndex(int index)
+{
+	switch (index)
+	{
+	case 0:
+		return CONFIG_ASPECT_16_9;
+	case 1:
+		return CONFIG_ASPECT_16_10;
+	case 2:
+		return CONFIG_ASPECT_4_3;
+	default:
+		return CONFIG_ASPECT_5_4;
+	}
+}
+
+static int ConfigBuildVerticalResolutionList(int* resolutions, int max_resolutions,
+	int display_width, int display_height)
+{
+	int count = 0;
+	for (int i = 0; i < (int)(sizeof(Config_base_vertical_resolutions) / sizeof(Config_base_vertical_resolutions[0])); i++)
+	{
+		int height = Config_base_vertical_resolutions[i];
+		if (!ConfigAspectFitsDisplay(CONFIG_ASPECT_5_4, height, display_width, display_height))
+			continue;
+
+		bool duplicate = false;
+		for (int j = 0; j < count; j++)
+		{
+			if (resolutions[j] == height)
+			{
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate && count < max_resolutions)
+			resolutions[count++] = height;
+	}
+
+	if (display_height > 0 &&
+		ConfigAspectFitsDisplay(CONFIG_ASPECT_5_4, display_height, display_width, display_height))
+	{
+		bool duplicate = false;
+		for (int i = 0; i < count; i++)
+		{
+			if (resolutions[i] == display_height)
+			{
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate && count < max_resolutions)
+			resolutions[count++] = display_height;
+	}
+
+	for (int i = 1; i < count; i++)
+	{
+		int value = resolutions[i];
+		int j = i - 1;
+		while (j >= 0 && resolutions[j] > value)
+		{
+			resolutions[j + 1] = resolutions[j];
+			j--;
+		}
+		resolutions[j + 1] = value;
+	}
+
+	return count;
+}
+
+static int ConfigHighestVerticalResolutionAtOrBelow(int desired_height, const int* resolutions, int count)
+{
+	if (count <= 0)
+		return desired_height > 0 ? desired_height : 480;
+
+	int best = resolutions[0];
+	for (int i = 0; i < count; i++)
+	{
+		if (resolutions[i] <= desired_height)
+			best = resolutions[i];
+	}
+	return best;
+}
+
+static void ConfigGetDesktopDisplaySize(int* display_width, int* display_height)
+{
+	*display_width = *display_height = 0;
+#if defined(SDL3)
+	SDL_DisplayID display = SDL_GetPrimaryDisplay();
+	const SDL_DisplayMode* mode = display ? SDL_GetCurrentDisplayMode(display) : nullptr;
+	if (mode)
+	{
+		*display_width = mode->w;
+		*display_height = mode->h;
+	}
+#elif defined(WIN32)
+	DEVMODE device_mode = {};
+	device_mode.dmSize = sizeof(device_mode);
+	if (EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &device_mode))
+	{
+		*display_width = (int)device_mode.dmPelsWidth;
+		*display_height = (int)device_mode.dmPelsHeight;
+	}
+	if (*display_width <= 0 || *display_height <= 0)
+	{
+		*display_width = GetSystemMetrics(SM_CXSCREEN);
+		*display_height = GetSystemMetrics(SM_CYSCREEN);
+	}
+#endif
+}
+
+static void ConfigResolveDisplayMode(int display_width, int display_height, int desired_height,
+	int desired_aspect, int* resolved_width, int* resolved_height, int* resolved_aspect)
+{
+	int resolutions[32];
+	int count = ConfigBuildVerticalResolutionList(resolutions, 32, display_width, display_height);
+	if (count <= 0)
+	{
+		*resolved_height = display_height > 0 ? display_height : 480;
+		*resolved_aspect = CONFIG_ASPECT_5_4;
+		*resolved_width = ConfigRoundAspectWidth(*resolved_height, *resolved_aspect);
+		return;
+	}
+
+	if (desired_aspect < 0 || desired_aspect >= CONFIG_ASPECT_COUNT)
+		desired_aspect = CONFIG_ASPECT_16_9;
+
+	int start_height = ConfigHighestVerticalResolutionAtOrBelow(desired_height, resolutions, count);
+	int start_index = 0;
+	for (int i = 0; i < count; i++)
+	{
+		if (resolutions[i] == start_height)
+		{
+			start_index = i;
+			break;
+		}
+	}
+
+	for (int height_index = start_index; height_index >= 0; height_index--)
+	{
+		int height = resolutions[height_index];
+		int start_aspect_order = (height == start_height && start_height == desired_height) ?
+			ConfigAspectOrderIndex(desired_aspect) : ConfigAspectOrderIndex(CONFIG_ASPECT_16_9);
+
+		for (int aspect_order = start_aspect_order; aspect_order < CONFIG_ASPECT_COUNT; aspect_order++)
+		{
+			int aspect = ConfigAspectFromOrderIndex(aspect_order);
+			if (!ConfigAspectFitsDisplay(aspect, height, display_width, display_height))
+				continue;
+
+			*resolved_height = height;
+			*resolved_aspect = aspect;
+			*resolved_width = ConfigRoundAspectWidth(height, aspect);
+			return;
+		}
+	}
+
+	*resolved_height = resolutions[0];
+	*resolved_aspect = CONFIG_ASPECT_5_4;
+	*resolved_width = ConfigRoundAspectWidth(*resolved_height, *resolved_aspect);
+}
+
+void ConfigValidateGameWindowSize()
+{
+	int display_width, display_height;
+	ConfigGetDesktopDisplaySize(&display_width, &display_height);
+	if (display_width <= 0)
+		display_width = Game_window_res_width > 0 ? Game_window_res_width : 1920;
+	if (display_height <= 0)
+		display_height = Game_window_res_height > 0 ? Game_window_res_height : 1080;
+
+	int desired_aspect = Game_window_aspect;
+	if (desired_aspect < 0 || desired_aspect >= CONFIG_ASPECT_COUNT ||
+		abs(ConfigRoundAspectWidth(Game_window_res_height, desired_aspect) - Game_window_res_width) > 2)
+	{
+		desired_aspect = ConfigAspectFromSize(Game_window_res_width, Game_window_res_height);
+	}
+
+	ConfigResolveDisplayMode(display_width, display_height, Game_window_res_height, desired_aspect,
+		&Game_window_res_width, &Game_window_res_height, &Game_window_aspect);
+}
 
 static void ConfigApplyFixedHBAOSettings()
 {
@@ -669,10 +929,6 @@ static void ApplyHBAOPresetFromIndex(int index)
 	}
 }
 
-struct video_menu;
-static video_menu* Active_video_menu = NULL;
-static void SyncActiveVideoMenuDisplayMode();
-
 struct video_menu
 {
 	newuiSheet* sheet;
@@ -684,9 +940,9 @@ struct video_menu
 	bool* bloom_enabled;
 	bool* vsync;
 
-	int* resolution;									// all resolutions
 	short* fov;
 	char* buffer;
+	char* aspect_buffer;
 	bool* fullscreen;
 	int* antialiasing;
 	int* supersampling;
@@ -694,6 +950,37 @@ struct video_menu
 	int* backend;
 
 	int window_width, window_height;
+	int window_aspect;
+	int display_width, display_height;
+
+	void update_display_text()
+	{
+		if (buffer)
+			snprintf(buffer, RESBUFFER_SIZE, "%d x %d", window_width, window_height);
+		if (aspect_buffer)
+			snprintf(aspect_buffer, ASPECTBUFFER_SIZE, "%5s", Config_aspect_ratios[window_aspect].name);
+	}
+
+	void init_display_bounds()
+	{
+		ConfigGetDesktopDisplaySize(&display_width, &display_height);
+		if (display_width <= 0 || display_height <= 0)
+		{
+			display_width = Max_window_w > 0 ? Max_window_w : Game_window_res_width;
+			display_height = Max_window_h > 0 ? Max_window_h : Game_window_res_height;
+		}
+		if (display_width <= 0)
+			display_width = 640;
+		if (display_height <= 0)
+			display_height = 480;
+	}
+
+	void normalize_display_choice()
+	{
+		ConfigResolveDisplayMode(display_width, display_height, window_height, window_aspect,
+			&window_width, &window_height, &window_aspect);
+		update_display_text();
+	}
 
 	void recenter_parent_menu()
 	{
@@ -718,6 +1005,7 @@ struct video_menu
 
 		if (window_width == Game_window_res_width &&
 			window_height == Game_window_res_height &&
+			window_aspect == Game_window_aspect &&
 			*fullscreen == Game_fullscreen)
 		{
 			return false;
@@ -732,6 +1020,7 @@ struct video_menu
 		Game_fullscreen = *fullscreen;
 		Game_window_res_width = window_width;
 		Game_window_res_height = window_height;
+		Game_window_aspect = window_aspect;
 
 		ForceFullGameWindowOnNextGameMode();
 		SetScreenMode(GetScreenMode(), true);
@@ -742,19 +1031,8 @@ struct video_menu
 		if (GetScreenMode() == SM_GAME)
 			PersistCurrentPilotGameWindowSize(true);
 		recenter_parent_menu();
-		SyncActiveVideoMenuDisplayMode();
 
 		return true;
-	}
-
-	void sync_display_mode()
-	{
-		if (!fullscreen)
-			return;
-
-		*fullscreen = Game_fullscreen;
-		if (sheet && sheet->IsRealized())
-			sheet->UpdateChanges();
 	}
 
 	void apply_live_settings()
@@ -839,24 +1117,51 @@ struct video_menu
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
 	{
+		sheet = NULL;
+		parent_menu = NULL;
+		filtering = NULL;
+		mipmapping = NULL;
+		per_pixel_lighting = NULL;
+		bloom_enabled = NULL;
+		vsync = NULL;
+		fov = NULL;
+		buffer = NULL;
+		aspect_buffer = NULL;
+		fullscreen = NULL;
+		antialiasing = NULL;
+		supersampling = NULL;
+		hbao = NULL;
+		backend = NULL;
+		window_width = window_height = 0;
+		window_aspect = CONFIG_ASPECT_16_9;
+		display_width = display_height = 0;
+
 		parent_menu = menu;
 		sheet = menu->AddOption(IDV_VCONFIG, TXT_OPTVIDEO, NEWUIMENU_LARGE);
 
-		sheet->NewGroup(TXT_RESOLUTION, 0, 0);
+		sheet->NewGroup(NULL, 0, 0);
+		init_display_bounds();
+		window_width = Game_window_res_width;
+		window_height = Game_window_res_height;
+		window_aspect = Game_window_aspect;
+		if (window_aspect < 0 || window_aspect >= CONFIG_ASPECT_COUNT)
+			window_aspect = ConfigAspectFromSize(window_width, window_height);
+		else if (abs(ConfigRoundAspectWidth(window_height, window_aspect) - window_width) > 2)
+			window_aspect = ConfigAspectFromSize(window_width, window_height);
+		normalize_display_choice();
 		buffer = sheet->AddChangeableText(RESBUFFER_SIZE);
-		snprintf(buffer, RESBUFFER_SIZE, "%d x %d", Game_window_res_width, Game_window_res_height);
-		sheet->AddLongButton("Change...", IDV_CHANGEWINDOW);
+		sheet->NewGroup(NULL, 122, 0);
+		aspect_buffer = sheet->AddChangeableText(ASPECTBUFFER_SIZE);
+		sheet->NewGroup(NULL, 0, 12);
+		update_display_text();
+		sheet->AddLongButton("Resolution...", IDV_CHANGEWINDOW);
+		sheet->AddLongButton("Aspect...", IDV_CHANGEASPECT);
 		fullscreen = sheet->AddLongCheckBox("Fullscreen", Game_fullscreen);
 		tSliderSettings settings = {};
 		settings.min_val.f = D3_DEFAULT_FOV;
 		settings.max_val.f = 90.f;
 		settings.type = SLIDER_UNITS_FLOAT;
 		fov = sheet->AddSlider("FOV", settings.max_val.f - settings.min_val.f, Render_FOV_desired - D3_DEFAULT_FOV, &settings);
-
-		window_width = Game_window_res_width;
-		window_height = Game_window_res_height;
-		Active_video_menu = this;
-		SetDisplayModeChangedCallback(SyncActiveVideoMenuDisplayMode);
 
 		sheet->NewGroup("OpenGL profile", 0, 80);
 		backend = sheet->AddFirstLongRadioButton("Compat (for NV)");
@@ -955,13 +1260,41 @@ struct video_menu
 				ApplyHBAOPresetFromIndex(0);
 		}
 
-		if (Active_video_menu == this)
-		{
-			Active_video_menu = NULL;
-			SetDisplayModeChangedCallback(NULL);
-		}
 		sheet = NULL;
 	};
+
+	int populate_resolution_list(newuiListBox* resolution_list, int* resolutions, int max_resolutions)
+	{
+		resolution_list->RemoveAll();
+		int count = ConfigBuildVerticalResolutionList(resolutions, max_resolutions, display_width, display_height);
+		char text[32];
+		for (int i = 0; i < count; i++)
+		{
+			snprintf(text, sizeof(text), "%d", resolutions[i]);
+			resolution_list->AddItem(text);
+			if (resolutions[i] == window_height)
+				resolution_list->SetCurrentIndex(i);
+		}
+		return count;
+	}
+
+	int populate_aspect_list(newuiListBox* aspect_list, int* aspects, int max_aspects)
+	{
+		aspect_list->RemoveAll();
+		int count = 0;
+		for (int i = 0; i < CONFIG_ASPECT_COUNT && count < max_aspects; i++)
+		{
+			if (!ConfigAspectFitsDisplay(i, window_height, display_width, display_height))
+				continue;
+
+			aspects[count] = i;
+			aspect_list->AddItem(Config_aspect_ratios[i].name);
+			if (i == window_aspect)
+				aspect_list->SetCurrentIndex(count);
+			count++;
+		}
+		return count;
+	}
 
 	// process
 	void process(int res)
@@ -975,6 +1308,8 @@ struct video_menu
 			newuiTiledWindow menu;
 			newuiSheet* select_sheet;
 			newuiListBox* resolution_list;
+			int resolutions[32];
+			int resolution_count;
 			bool display_settings_changed = false;
 
 			menu.Create("Resolution", 0, 0, 300, 384);
@@ -985,23 +1320,9 @@ struct video_menu
 			select_sheet->AddButton(TXT_OK, UID_OK);
 			select_sheet->AddButton(TXT_CANCEL, UID_CANCEL);
 
-			for (int i = 0; i < NUM_RESOLUTION; i++)
-			{
-				resolution_list->AddItem(New_video_res_list[i].name);
-			}
+			resolution_count = populate_resolution_list(resolution_list, resolutions, 32);
 
 			menu.Open();
-
-			//I think this needs to be done after the sheet is realized.
-			for (int i = 0; i < NUM_RESOLUTION; i++)
-			{
-				if (window_width == New_video_res_list[i].width &&
-					window_height == New_video_res_list[i].height)
-				{
-					resolution_list->SetCurrentIndex(i);
-					break;
-				}
-			}
 
 			int res;
 			do
@@ -1012,16 +1333,14 @@ struct video_menu
 			if (res == UID_OK)
 			{
 				int newindex = resolution_list->GetCurrentIndex();
-				if (newindex < NUM_RESOLUTION) //for custom items
+				if (newindex >= 0 && newindex < resolution_count)
 				{
-					newVideoResolution& res = New_video_res_list[resolution_list->GetCurrentIndex()];
-					window_width = res.width;
-					window_height = res.height;
+					window_height = resolutions[newindex];
+					window_aspect = ConfigBestAspectForDisplay(window_aspect, window_height, display_width, display_height);
+					window_width = ConfigRoundAspectWidth(window_height, window_aspect);
+					update_display_text();
 					display_settings_changed = true;
 				}
-
-				snprintf(buffer, RESBUFFER_SIZE, "%d x %d", window_width, window_height);
-
 			}
 
 			menu.Close();
@@ -1031,18 +1350,57 @@ struct video_menu
 
 		}
 		break;
+		case IDV_CHANGEASPECT:
+		{
+			newuiTiledWindow menu;
+			newuiSheet* select_sheet;
+			newuiListBox* aspect_list;
+			int aspects[CONFIG_ASPECT_COUNT];
+			int aspect_count;
+			bool display_settings_changed = false;
+
+			menu.Create("Aspect", 0, 0, 260, 256);
+			select_sheet = menu.GetSheet();
+			select_sheet->NewGroup(NULL, 10, 0);
+			aspect_list = select_sheet->AddListBox(168, 128, UID_ASPECT, UILB_NOSORT);
+			select_sheet->NewGroup(NULL, 80, 160, NEWUI_ALIGN_HORIZ);
+			select_sheet->AddButton(TXT_OK, UID_OK);
+			select_sheet->AddButton(TXT_CANCEL, UID_CANCEL);
+
+			aspect_count = populate_aspect_list(aspect_list, aspects, CONFIG_ASPECT_COUNT);
+
+			menu.Open();
+
+			int res;
+			do
+			{
+				res = menu.DoUI();
+			} while (res != UID_OK && res != UID_CANCEL);
+
+			if (res == UID_OK)
+			{
+				int newindex = aspect_list->GetCurrentIndex();
+				if (newindex >= 0 && newindex < aspect_count)
+				{
+					window_aspect = aspects[newindex];
+					window_width = ConfigRoundAspectWidth(window_height, window_aspect);
+					update_display_text();
+					display_settings_changed = true;
+				}
+			}
+
+			menu.Close();
+			menu.Destroy();
+			if (display_settings_changed)
+				apply_display_settings(true);
+		}
+		break;
 		case IDV_AUTOGAMMA:
 			config_gamma();
 			break;
 		}
 	};
 };
-
-static void SyncActiveVideoMenuDisplayMode()
-{
-	if (Active_video_menu)
-		Active_video_menu->sync_display_mode();
-}
 
 //////////////////////////////////////////////////////////////////
 // SOUND MENU

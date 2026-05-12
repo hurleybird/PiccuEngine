@@ -429,6 +429,7 @@ void SaveGameSettings()
 	Database->write("RS_resolution", Game_video_resolution);
 	Database->write("RS_windowwidth", Game_window_res_width);
 	Database->write("RS_windowheight", Game_window_res_height);
+	Database->write("RS_windowaspect", Game_window_aspect);
 	Database->write("RS_fullscreen", Game_fullscreen);
 	Database->write("RS_fovdesired", Render_FOV_desired);
 
@@ -605,6 +606,8 @@ void LoadGameSettings()
 	Database->read_int("RS_resolution", &Game_video_resolution);
 	Database->read_int("RS_windowwidth", &Game_window_res_width);
 	Database->read_int("RS_windowheight", &Game_window_res_height);
+	Database->read_int("RS_windowaspect", &Game_window_aspect);
+	ConfigValidateGameWindowSize();
 	int temp;
 	Database->read_int("RS_fovdesired", &temp);
 	if (temp < D3_DEFAULT_FOV)

@@ -124,6 +124,11 @@ static bool ConfigCanUseHBAO()
 	return OpenGLProfile == GLPROFILE_CORE;
 }
 
+static bool ConfigShowsLegacyTerrainControls()
+{
+	return OpenGLProfile != GLPROFILE_CORE;
+}
+
 int ConfigNormalizeSupersamplingFactor(int factor)
 {
 	if (factor >= 4)
@@ -1403,6 +1408,7 @@ struct details_menu
 		int iTemp;
 		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_MEDIUM);
 		parent_menu = menu;
+		const bool show_legacy_terrain_controls = ConfigShowsLegacyTerrainControls();
 
 		// detail level radio
 		Database->read_int("PredefDetailSetting", &Default_detail_level);
@@ -1429,24 +1435,32 @@ struct details_menu
 		weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
 
 		// sliders
-		tSliderSettings slider_set;
-		sheet->NewGroup(TXT_GEOMETRY, 90, 0);
-		iTemp = MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL;
-		if (iTemp < 0) iTemp = 0;
-		slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
-		slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
-		slider_set.type = SLIDER_UNITS_INT;
-		pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
+		if (show_legacy_terrain_controls)
+		{
+			tSliderSettings slider_set;
+			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
+			iTemp = MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL;
+			if (iTemp < 0) iTemp = 0;
+			slider_set.min_val.i = MINIMUM_TERRAIN_DETAIL;
+			slider_set.max_val.i = MAXIMUM_TERRAIN_DETAIL;
+			slider_set.type = SLIDER_UNITS_INT;
+			pixel_err = sheet->AddSlider(TXT_TERRDETAIL, MAXIMUM_TERRAIN_DETAIL - MINIMUM_TERRAIN_DETAIL, iTemp, &slider_set);
 
-		slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
-		slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
-		slider_set.type = SLIDER_UNITS_INT;
-		iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
-		if (iTemp < 0) iTemp = 0;
-		rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
+			slider_set.min_val.i = MINIMUM_RENDER_DIST / 2;
+			slider_set.max_val.i = MAXIMUM_RENDER_DIST / 2;
+			slider_set.type = SLIDER_UNITS_INT;
+			iTemp = (int)(Detail_settings.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST;
+			if (iTemp < 0) iTemp = 0;
+			rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
+		}
+		else
+		{
+			pixel_err = NULL;
+			rend_dist = NULL;
+		}
 
 		// object complexity radio
-		sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
+		sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, show_legacy_terrain_controls ? 174 : 90, show_legacy_terrain_controls ? 87 : 0);
 		objcomp = sheet->AddFirstRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
@@ -1464,12 +1478,14 @@ struct details_menu
 		Detail_settings.Fog_enabled = *fog;
 		Detail_settings.Mirrored_surfaces = *mirror;
 		Detail_settings.Object_complexity = *objcomp;
-		Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
+		if (pixel_err)
+			Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
 		Detail_settings.Powerup_halos = *powerup_halo;
 		Detail_settings.Procedurals_enabled = *procedurals;
 		Detail_settings.Scorches_enabled = *scorches;
 		Detail_settings.Specular_lighting = *specmap;
-		Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
+		if (rend_dist)
+			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
 		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
 
 		Default_detail_level = *detail_level;
@@ -1493,8 +1509,8 @@ struct details_menu
 			sheet->HasChanged(scorches) ||
 			sheet->HasChanged(weapon_coronas) ||
 			sheet->HasChanged(objcomp) ||
-			sheet->HasChanged(pixel_err) ||
-			sheet->HasChanged(rend_dist);
+			(pixel_err && sheet->HasChanged(pixel_err)) ||
+			(rend_dist && sheet->HasChanged(rend_dist));
 
 		if (changed)
 		{
@@ -1533,14 +1549,28 @@ void details_menu::set_preset_details(int setting)
 	};
 
 	//now go through all the config items and set to the new values
-	int iTemp = MAXIMUM_TERRAIN_DETAIL - ds.Pixel_error - MINIMUM_TERRAIN_DETAIL;
-	if (iTemp < 0)
-		iTemp = 0;
-	*pixel_err = (short)(iTemp);
-	iTemp = (int)((ds.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST);
-	if (iTemp < 0) iTemp = 0;
-	iTemp = iTemp / 2;
-	*rend_dist = (short)(iTemp);
+	if (pixel_err)
+	{
+		int iTemp = MAXIMUM_TERRAIN_DETAIL - ds.Pixel_error - MINIMUM_TERRAIN_DETAIL;
+		if (iTemp < 0)
+			iTemp = 0;
+		*pixel_err = (short)(iTemp);
+	}
+	else
+	{
+		Detail_settings.Pixel_error = ds.Pixel_error;
+	}
+	if (rend_dist)
+	{
+		int iTemp = (int)((ds.Terrain_render_distance / ((float)TERRAIN_SIZE)) - MINIMUM_RENDER_DIST);
+		if (iTemp < 0) iTemp = 0;
+		iTemp = iTemp / 2;
+		*rend_dist = (short)(iTemp);
+	}
+	else
+	{
+		Detail_settings.Terrain_render_distance = ds.Terrain_render_distance;
+	}
 	*objcomp = ds.Object_complexity;
 	*specmap = ds.Specular_lighting;
 	*headlight = ds.Fast_headlight_on;

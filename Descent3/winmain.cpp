@@ -188,16 +188,6 @@ public:
 				return 0;
 			}
 			break;
-		case WM_SYSCOMMAND:
-			if ((wParam & 0xfff0) == SC_CLOSE &&
-				ShouldConfirmAltF4QuitInGame() &&
-				(GetAsyncKeyState(VK_MENU) & 0x8000) &&
-				(GetAsyncKeyState(VK_F4) & 0x8000))
-			{
-				RequestAltF4QuitConfirmation();
-				return 0;
-			}
-			break;
 		case WM_KILLFOCUS:
 			ddio_MouseMode(MOUSE_STANDARD_MODE);
 			ddio_KeyFlush();

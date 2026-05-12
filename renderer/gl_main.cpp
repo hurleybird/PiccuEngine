@@ -293,11 +293,12 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			hbao.DestroyFramebuffers();
 		}
 
-		if (old_state.per_pixel_lighting != pref_state->per_pixel_lighting)
-		{
-			per_pixel_dynamic_light_count = 0;
-			OpenGL_state.cur_light_state = (light_state)-1;
-		}
+	if (old_state.per_pixel_lighting != pref_state->per_pixel_lighting)
+	{
+		per_pixel_dynamic_light_count = 0;
+		OpenGL_state.cur_light_state = (light_state)-1;
+		legacy_draw_uniforms_dirty = true;
+	}
 
 		if (old_state.gamma != pref_state->gamma)
 		{
@@ -352,6 +353,8 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 	}
 	motion_vectors_dirty = false;
+	if (hbao_suppression_draw_value != 0.0f)
+		legacy_draw_uniforms_dirty = true;
 	hbao_suppression_draw_value = 0.0f;
 	hbao_mask_dirty = false;
 	if (framebuffer_ok && framebuffers[framebuffer_current_draw].Samples() >= 2)
@@ -731,6 +734,7 @@ void GL3Renderer::SetLighting(light_state state)
 		Int3();
 		break;
 	}
+	legacy_draw_uniforms_dirty = true;
 
 	CHECK_ERROR(13);
 }
@@ -738,7 +742,10 @@ void GL3Renderer::SetLighting(light_state state)
 void GL3Renderer::SetPerPixelLightingDirection(const vector *lightdir)
 {
 	if (lightdir)
+	{
 		per_pixel_light_direction = *lightdir;
+		legacy_draw_uniforms_dirty = true;
+	}
 }
 
 static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_normal,
@@ -749,45 +756,12 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 	GLfloat dot_ranges[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS],
 	GLint directional[RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS])
 {
-	GLint program = 0;
-	glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-	if (program == 0)
-		return;
-
-	GLint uniform = glGetUniformLocation(program, "dynamic_light_count");
-	if (uniform != -1)
-		glUniform1i(uniform, count);
-
-	if (count <= 0)
-		return;
-
-	uniform = glGetUniformLocation(program, "dynamic_face_normal");
-	if (uniform != -1)
-		glUniform3f(uniform, face_normal.x, face_normal.y, face_normal.z);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_positions[0]");
-	if (uniform != -1)
-		glUniform3fv(uniform, count, &positions[0][0]);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_colors[0]");
-	if (uniform != -1)
-		glUniform3fv(uniform, count, &colors[0][0]);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_radii[0]");
-	if (uniform != -1)
-		glUniform1fv(uniform, count, radii);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_directions[0]");
-	if (uniform != -1)
-		glUniform3fv(uniform, count, &directions[0][0]);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_dot_ranges[0]");
-	if (uniform != -1)
-		glUniform1fv(uniform, count, dot_ranges);
-
-	uniform = glGetUniformLocation(program, "dynamic_light_directional[0]");
-	if (uniform != -1)
-		glUniform1iv(uniform, count, directional);
+	ShaderProgram* current = ShaderProgram::Current();
+	if (current)
+	{
+		current->ApplyDynamicLighting(count, &face_normal.x, &positions[0][0], &colors[0][0],
+			radii, &directions[0][0], dot_ranges, directional);
+	}
 }
 
 void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
@@ -795,6 +769,8 @@ void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 {
 	if (!OpenGL_preferred_state.per_pixel_lighting || count <= 0 || lights == nullptr || face_normal == nullptr)
 	{
+		if (per_pixel_dynamic_light_count != 0)
+			legacy_draw_uniforms_dirty = true;
 		per_pixel_dynamic_light_count = 0;
 		UpdateCurrentDynamicLightingUniforms(per_pixel_dynamic_light_count, per_pixel_dynamic_face_normal,
 			per_pixel_dynamic_positions, per_pixel_dynamic_colors, per_pixel_dynamic_radii,
@@ -804,6 +780,7 @@ void GL3Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int coun
 
 	per_pixel_dynamic_face_normal = *face_normal;
 	per_pixel_dynamic_light_count = std::min(count, RENDERER_MAX_PER_PIXEL_DYNAMIC_LIGHTS);
+	legacy_draw_uniforms_dirty = true;
 	for (int i = 0; i < per_pixel_dynamic_light_count; i++)
 	{
 		per_pixel_dynamic_positions[i][0] = lights[i].position[0];
@@ -1090,7 +1067,10 @@ void GL3Renderer::SetAlphaValue(ubyte val)
 
 void GL3Renderer::SetHBAOSuppression(float value)
 {
-	hbao_suppression_draw_value = std::max(0.0f, std::min(value, 1.0f));
+	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
+	if (clamped_value != hbao_suppression_draw_value)
+		legacy_draw_uniforms_dirty = true;
+	hbao_suppression_draw_value = clamped_value;
 	if (hbao_suppression_draw_value > 0.0f)
 		hbao_mask_dirty = true;
 }

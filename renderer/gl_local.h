@@ -164,6 +164,7 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	GLint drawshader_hbao_suppression_uniforms[8] = {};
 	int lastdrawshader = -1;
+	bool legacy_draw_uniforms_dirty = true;
 	float hbao_suppression_draw_value = 0.0f;
 	bool hbao_mask_dirty = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };

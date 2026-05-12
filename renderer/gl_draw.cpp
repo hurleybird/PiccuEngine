@@ -368,7 +368,11 @@ void GL3Renderer::SelectDrawShader()
 		}
 	}
 
+	const bool shader_changed = shader_index != lastdrawshader;
 	drawshaders[shader_index].Use();
+	if (!shader_changed && !legacy_draw_uniforms_dirty)
+		return;
+
 	if (drawshader_hbao_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_hbao_suppression_uniforms[shader_index], hbao_suppression_draw_value);
 
@@ -379,32 +383,14 @@ void GL3Renderer::SelectDrawShader()
 		glUniform3f(drawshader_light_direction_uniforms[shader_index], per_pixel_light_direction.x,
 			per_pixel_light_direction.y, per_pixel_light_direction.z);
 
-	if (drawshader_dynamic_count_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_dynamic_count_uniforms[shader_index], per_pixel_dynamic_light_count);
-	if (per_pixel_dynamic_light_count > 0)
-	{
-		if (drawshader_dynamic_face_normal_uniforms[shader_index] != -1)
-			glUniform3f(drawshader_dynamic_face_normal_uniforms[shader_index], per_pixel_dynamic_face_normal.x,
-				per_pixel_dynamic_face_normal.y, per_pixel_dynamic_face_normal.z);
-		if (drawshader_dynamic_positions_uniforms[shader_index] != -1)
-			glUniform3fv(drawshader_dynamic_positions_uniforms[shader_index], per_pixel_dynamic_light_count,
-				&per_pixel_dynamic_positions[0][0]);
-		if (drawshader_dynamic_colors_uniforms[shader_index] != -1)
-			glUniform3fv(drawshader_dynamic_colors_uniforms[shader_index], per_pixel_dynamic_light_count,
-				&per_pixel_dynamic_colors[0][0]);
-		if (drawshader_dynamic_radii_uniforms[shader_index] != -1)
-			glUniform1fv(drawshader_dynamic_radii_uniforms[shader_index], per_pixel_dynamic_light_count,
-				per_pixel_dynamic_radii);
-		if (drawshader_dynamic_directions_uniforms[shader_index] != -1)
-			glUniform3fv(drawshader_dynamic_directions_uniforms[shader_index], per_pixel_dynamic_light_count,
-				&per_pixel_dynamic_directions[0][0]);
-		if (drawshader_dynamic_dot_ranges_uniforms[shader_index] != -1)
-			glUniform1fv(drawshader_dynamic_dot_ranges_uniforms[shader_index], per_pixel_dynamic_light_count,
-				per_pixel_dynamic_dot_ranges);
-		if (drawshader_dynamic_directional_uniforms[shader_index] != -1)
-			glUniform1iv(drawshader_dynamic_directional_uniforms[shader_index], per_pixel_dynamic_light_count,
-				per_pixel_dynamic_directional);
-	}
+	drawshaders[shader_index].ApplyDynamicLighting(per_pixel_dynamic_light_count,
+		&per_pixel_dynamic_face_normal.x, &per_pixel_dynamic_positions[0][0],
+		&per_pixel_dynamic_colors[0][0], per_pixel_dynamic_radii,
+		&per_pixel_dynamic_directions[0][0], per_pixel_dynamic_dot_ranges,
+		per_pixel_dynamic_directional);
+
+	lastdrawshader = shader_index;
+	legacy_draw_uniforms_dirty = false;
 }
 
 // Takes nv vertices and draws the 3D polygon defined by those vertices.

@@ -191,7 +191,7 @@ void GL3Renderer::InitShaders()
 	lastshaderprog = nullptr;
 	glGenBuffers(1, &commonbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);
-	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock) * 35, nullptr, GL_DYNAMIC_READ);
+	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock) * 35, nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, COMMON_BINDING, commonbuffername);
 
 #ifdef _DEBUG
@@ -203,7 +203,7 @@ void GL3Renderer::InitShaders()
 	//The legacy common buffer uses the ortho matrix as a passthrough.
 	glGenBuffers(1, &legacycommonbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, legacycommonbuffername);
-	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock), nullptr, GL_DYNAMIC_READ);
+	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(CommonBlock), nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, LEGACY_BINDING, legacycommonbuffername);
 
 #ifdef _DEBUG
@@ -214,7 +214,7 @@ void GL3Renderer::InitShaders()
 
 	glGenBuffers(1, &specularbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, specularbuffername);
-	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(SpecularBlock), nullptr, GL_STREAM_READ);
+	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(SpecularBlock), nullptr, GL_STREAM_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, SPECULAR_BINDING, specularbuffername);
 
 #ifdef _DEBUG
@@ -225,7 +225,7 @@ void GL3Renderer::InitShaders()
 
 	glGenBuffers(1, &fogbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, fogbuffername);
-	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(RoomBlock) * 100, nullptr, GL_DYNAMIC_READ);
+	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(RoomBlock) * 100, nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, ROOM_BINDING, fogbuffername);
 
 #ifdef _DEBUG
@@ -236,7 +236,7 @@ void GL3Renderer::InitShaders()
 
 	glGenBuffers(1, &terrainfogbuffername);
 	glBindBuffer(GL_COPY_WRITE_BUFFER, terrainfogbuffername);
-	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(TerrainFogBlock) * TERRAIN_FOG_COUNTER_MAX, nullptr, GL_DYNAMIC_READ);
+	glBufferData(GL_COPY_WRITE_BUFFER, sizeof(TerrainFogBlock) * TERRAIN_FOG_COUNTER_MAX, nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, TERRAIN_FOG_BINDING, terrainfogbuffername);
 
 #ifdef _DEBUG
@@ -349,7 +349,7 @@ void GL3Renderer::UpdateTerrainFog(float color[4], float start, float end)
 	terrainfogcounter++;
 	if (terrainfogcounter == TERRAIN_FOG_COUNTER_MAX)
 	{
-		glBufferData(GL_COPY_WRITE_BUFFER, sizeof(TerrainFogBlock) * TERRAIN_FOG_COUNTER_MAX, nullptr, GL_DYNAMIC_READ);
+		glBufferData(GL_COPY_WRITE_BUFFER, sizeof(TerrainFogBlock) * TERRAIN_FOG_COUNTER_MAX, nullptr, GL_DYNAMIC_DRAW);
 		terrainfogcounter = 0;
 	}
 	
@@ -474,6 +474,16 @@ void ShaderProgram::CreateCommonBindings(int bindindex)
 	{
 		glUniformBlockBinding(m_name, uboindex, TERRAIN_FOG_BINDING);
 	}
+
+	m_dynamic_light_count = glGetUniformLocation(m_name, "dynamic_light_count");
+	m_dynamic_face_normal = glGetUniformLocation(m_name, "dynamic_face_normal");
+	m_dynamic_light_positions = glGetUniformLocation(m_name, "dynamic_light_positions[0]");
+	m_dynamic_light_colors = glGetUniformLocation(m_name, "dynamic_light_colors[0]");
+	m_dynamic_light_radii = glGetUniformLocation(m_name, "dynamic_light_radii[0]");
+	m_dynamic_light_directions = glGetUniformLocation(m_name, "dynamic_light_directions[0]");
+	m_dynamic_light_dot_ranges = glGetUniformLocation(m_name, "dynamic_light_dot_ranges[0]");
+	m_dynamic_light_directional = glGetUniformLocation(m_name, "dynamic_light_directional[0]");
+	m_last_dynamic_light_count = -1;
 
 	ClearBinding();
 }
@@ -600,6 +610,7 @@ void ShaderProgram::Destroy()
 	ClearBinding();
 	glDeleteProgram(m_name);
 	m_name = 0;
+	m_last_dynamic_light_count = -1;
 }
 
 void ShaderProgram::Use()
@@ -611,8 +622,49 @@ void ShaderProgram::Use()
 	}
 }
 
+void ShaderProgram::ApplyDynamicLighting(int count, const float* face_normal, const GLfloat* positions,
+	const GLfloat* colors, const GLfloat* radii, const GLfloat* directions,
+	const GLfloat* dot_ranges, const GLint* directional)
+{
+	if (m_dynamic_light_count == -1)
+		return;
+
+	if (count <= 0)
+	{
+		if (m_last_dynamic_light_count == 0)
+			return;
+
+		glUniform1i(m_dynamic_light_count, 0);
+		m_last_dynamic_light_count = 0;
+		return;
+	}
+
+	glUniform1i(m_dynamic_light_count, count);
+	if (m_dynamic_face_normal != -1)
+		glUniform3fv(m_dynamic_face_normal, 1, face_normal);
+	if (m_dynamic_light_positions != -1)
+		glUniform3fv(m_dynamic_light_positions, count, positions);
+	if (m_dynamic_light_colors != -1)
+		glUniform3fv(m_dynamic_light_colors, count, colors);
+	if (m_dynamic_light_radii != -1)
+		glUniform1fv(m_dynamic_light_radii, count, radii);
+	if (m_dynamic_light_directions != -1)
+		glUniform3fv(m_dynamic_light_directions, count, directions);
+	if (m_dynamic_light_dot_ranges != -1)
+		glUniform1fv(m_dynamic_light_dot_ranges, count, dot_ranges);
+	if (m_dynamic_light_directional != -1)
+		glUniform1iv(m_dynamic_light_directional, count, directional);
+
+	m_last_dynamic_light_count = count;
+}
+
 void ShaderProgram::ClearBinding()
 {
 	lastshaderprog = nullptr;
 	glUseProgram(0);
+}
+
+ShaderProgram* ShaderProgram::Current()
+{
+	return lastshaderprog;
 }

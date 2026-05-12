@@ -64,6 +64,16 @@ struct ShaderDefinition
 class ShaderProgram
 {
 	GLuint m_name;
+	GLint m_dynamic_light_count = -1;
+	GLint m_dynamic_face_normal = -1;
+	GLint m_dynamic_light_positions = -1;
+	GLint m_dynamic_light_colors = -1;
+	GLint m_dynamic_light_radii = -1;
+	GLint m_dynamic_light_directions = -1;
+	GLint m_dynamic_light_dot_ranges = -1;
+	GLint m_dynamic_light_directional = -1;
+	int m_last_dynamic_light_count = -1;
+
 	//CreateCommonBindings will find common uniforms and set their default bindings.
 	//This includes the common block, which must be named "common",
 	//and sampler2Ds named "colortexture", "lightmaptexture", and others later.
@@ -85,9 +95,13 @@ public:
 	void Destroy();
 
 	void Use();
+	void ApplyDynamicLighting(int count, const float* face_normal, const GLfloat* positions,
+		const GLfloat* colors, const GLfloat* radii, const GLfloat* directions,
+		const GLfloat* dot_ranges, const GLint* directional);
 
 	//Replacement for glUseProgram(0) that nulls the last binding.
 	static void ClearBinding();
+	static ShaderProgram* Current();
 
 	GLuint Handle() const
 	{

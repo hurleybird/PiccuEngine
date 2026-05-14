@@ -1421,15 +1421,6 @@ struct sound_menu
 	short* reverb_level;
 	bool* hrtf;
 
-	short* add_float_slider(newuiSheet* target_sheet, const char* title, float value, float min_value, float max_value)
-	{
-		tSliderSettings slider_set;
-		slider_set.type = SLIDER_UNITS_FLOAT;
-		slider_set.min_val.f = min_value;
-		slider_set.max_val.f = max_value;
-		return target_sheet->AddSlider(title, 100, CALC_SLIDER_POS_FLOAT(value, &slider_set, 100), &slider_set);
-	}
-
 	float slider_float_value(short* slider, float min_value, float max_value)
 	{
 		return CALC_SLIDER_FLOAT_VALUE(*slider, min_value, max_value, 100);

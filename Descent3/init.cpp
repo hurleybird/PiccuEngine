@@ -593,8 +593,8 @@ void LoadGameSettings()
 	Sound_hrtf_bass_gain = 3.0f;
 	Sound_hrtf_bass_cutoff = 200.0f;
 	Sound_hrtf_treble_gain = 1.5f;
-	Sound_hrtf_treble_cutoff = 7000.0f;
-	Sound_hrtf_eq_mix = 0.75f;
+	Sound_hrtf_treble_cutoff = 6000.0f;
+	Sound_hrtf_eq_mix = 0.7f;
 	Sound_hrtf_high_damping = 1.0f;
 	Sound_hrtf_rolloff_scale = 1.0f;
 	Sound_hrtf_reference_distance_scale = 1.0f;
@@ -879,8 +879,8 @@ void LoadGameSettings()
 	Sound_hrtf_bass_gain = 3.0f;
 	Sound_hrtf_bass_cutoff = 200.0f;
 	Sound_hrtf_treble_gain = 1.5f;
-	Sound_hrtf_treble_cutoff = 7000.0f;
-	Sound_hrtf_eq_mix = 0.75f;
+	Sound_hrtf_treble_cutoff = 6000.0f;
+	Sound_hrtf_eq_mix = 0.7f;
 	Sound_hrtf_high_damping = 1.0f;
 	Sound_hrtf_rolloff_scale = 1.0f;
 	Sound_hrtf_reference_distance_scale = 1.0f;

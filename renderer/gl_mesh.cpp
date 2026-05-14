@@ -235,6 +235,11 @@ void rendTEMP_UnbindVertexBuffer()
 	rend_RestoreLegacy();
 }
 
+void rendTEMP_ClearShaderBinding()
+{
+	ShaderProgram::ClearBinding();
+}
+
 bool rendTEMP_DepthClampEnabled()
 {
 	return glIsEnabled(GL_DEPTH_CLAMP) == GL_TRUE;

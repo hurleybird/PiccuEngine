@@ -211,7 +211,17 @@ extern float Terrain_average_height;
 
 extern float Clip_scale_left,Clip_scale_right,Clip_scale_top,Clip_scale_bot;
 extern ubyte Terrain_from_mine;
+
+enum terrain_renderer_mode
+{
+	TERRAIN_RENDERER_LEGACY,
+	TERRAIN_RENDERER_MESH,
+	TERRAIN_RENDERER_COMPUTE
+};
+
+extern int Terrain_renderer_mode;
 extern bool Use_terrain_mesh_renderer;
+extern char Terrain_compute_status_text[96];
 
 extern float Last_terrain_render_time;
 

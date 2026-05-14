@@ -93,6 +93,7 @@ public:
 //TEMP CODE: Sets vertex buffer back to draw vertex buffer.
 //Call at the end of all mesh based rendering
 void rendTEMP_UnbindVertexBuffer();
+void rendTEMP_ClearShaderBinding();
 bool rendTEMP_DepthClampEnabled();
 void rendTEMP_SetDepthClamp(bool state);
 

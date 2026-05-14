@@ -135,7 +135,7 @@ static bool ConfigCanUseTerrainMeshRenderer()
 
 static bool ConfigShowsLegacyTerrainControls()
 {
-	return !ConfigCanUseTerrainMeshRenderer() || !Use_terrain_mesh_renderer;
+	return !ConfigCanUseTerrainMeshRenderer() || Terrain_renderer_mode != TERRAIN_RENDERER_MESH;
 }
 
 int ConfigNormalizeSupersamplingFactor(int factor)
@@ -1883,10 +1883,11 @@ struct details_menu
 
 		if (can_toggle_terrain_mesh)
 		{
-			sheet->NewGroup("New Terrain", 90, show_legacy_terrain_controls ? 87 : 0);
-			terrain_mesh = sheet->AddFirstRadioButton(TXT_OFF);
-			sheet->AddRadioButton(TXT_ON);
-			*terrain_mesh = Use_terrain_mesh_renderer ? 1 : 0;
+			sheet->NewGroup("Terrain renderer", 90, show_legacy_terrain_controls ? 87 : 0);
+			terrain_mesh = sheet->AddFirstRadioButton("Legacy");
+			sheet->AddRadioButton("Mesh");
+			sheet->AddRadioButton("Compute");
+			*terrain_mesh = Terrain_renderer_mode;
 		}
 		else
 		{
@@ -1900,6 +1901,12 @@ struct details_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		sheet->AddRadioButton(TXT_CFG_MAX);
 		*objcomp = Detail_settings.Object_complexity;
+
+		if (can_toggle_terrain_mesh)
+		{
+			sheet->NewGroup(NULL, 0, 252);
+			sheet->AddText("%s", Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE ? Terrain_compute_status_text : "Compute: not selected");
+		}
 
 		return sheet;
 	};
@@ -1922,7 +1929,10 @@ struct details_menu
 		if (rend_dist)
 			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
 		if (terrain_mesh)
-			Use_terrain_mesh_renderer = (*terrain_mesh != 0);
+		{
+			Terrain_renderer_mode = *terrain_mesh;
+			Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
+		}
 		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
 
 		Default_detail_level = *detail_level;
@@ -1950,7 +1960,10 @@ struct details_menu
 			(rend_dist && sheet->HasChanged(rend_dist));
 
 		if (terrain_mesh && sheet->HasChanged(terrain_mesh))
-			Use_terrain_mesh_renderer = (*terrain_mesh != 0);
+		{
+			Terrain_renderer_mode = *terrain_mesh;
+			Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
+		}
 
 		if (changed)
 		{

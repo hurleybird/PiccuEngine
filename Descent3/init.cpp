@@ -428,6 +428,7 @@ void SaveGameSettings()
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
 	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
 	Database->write("RS_use_terrain_mesh_renderer", Use_terrain_mesh_renderer);
+	Database->write("RS_terrain_renderer_mode", Terrain_renderer_mode);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -569,6 +570,7 @@ void LoadGameSettings()
 	ApplyFixedHBAOSettings();
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
+	Terrain_renderer_mode = TERRAIN_RENDERER_MESH;
 	Use_terrain_mesh_renderer = true;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
@@ -796,6 +798,11 @@ void LoadGameSettings()
 	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
 	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
 	Database->read("RS_use_terrain_mesh_renderer", &Use_terrain_mesh_renderer);
+	Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
+	Database->read_int("RS_terrain_renderer_mode", &Terrain_renderer_mode);
+	if (Terrain_renderer_mode < TERRAIN_RENDERER_LEGACY || Terrain_renderer_mode > TERRAIN_RENDERER_COMPUTE)
+		Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
+	Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
 	if (!DesiredOpenGLProfileExplicit)
@@ -808,6 +815,8 @@ void LoadGameSettings()
 	{
 		Render_preferred_state.per_pixel_lighting = false;
 		Render_preferred_state.hbao_enabled = false;
+		Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
+		Use_terrain_mesh_renderer = false;
 	}
 
 	if (FindArg ("-vsync"))

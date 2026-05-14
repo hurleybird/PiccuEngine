@@ -770,6 +770,22 @@ static bool TerrainComputeCanRender(bool from_automap, bool draw_lightmap)
 	return true;
 }
 
+static bool TerrainComputeNoFarCullOrLod()
+{
+#if (defined(EDITOR) || defined(NEWEDITOR))
+	if (View_mode == EDITOR_MODE)
+		return false;
+#endif
+
+	if (Terrain_compute_unavailable)
+		return false;
+
+	if (Viewer_object && Viewer_object->effect_info && (Viewer_object->effect_info->type_flags & EF_DEFORM))
+		return false;
+
+	return Terrain_renderer_mode == TERRAIN_RENDERER_COMPUTE && UseHardware && OpenGLProfile == GLPROFILE_CORE;
+}
+
 static void MarkTerrainComputePoint(int seg)
 {
 	Terrain_rotate_list[seg] = TS_FrameCount;
@@ -2000,14 +2016,19 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	// Set this so we don't do reentrant rendering between terrain/mine
 	Terrain_from_mine = from_mine;
 	bool use_mesh_terrain = TerrainMeshCanRender();
+	bool use_compute_no_far_lod = !use_mesh_terrain && TerrainComputeNoFarCullOrLod();
 
+	const float kComputeTerrainFogDistance = 200.0f * TERRAIN_SIZE;
 #ifndef NEWEDITOR
-	const float kTerrainRenderDistance = Detail_settings.Terrain_render_distance;
+	const float kDefaultTerrainFogDistance = Detail_settings.Terrain_render_distance;
 #else
-	const float kTerrainRenderDistance = 1200.0f;
+	const float kDefaultTerrainFogDistance = 1200.0f;
 #endif
-	VisibleTerrainZ = kTerrainRenderDistance * Matrix_scale.z;
-	Far_fog_border = VisibleTerrainZ;
+	const float kTerrainFogDistance = use_compute_no_far_lod ? kComputeTerrainFogDistance : kDefaultTerrainFogDistance;
+	const float terrain_fog_z = kTerrainFogDistance * Matrix_scale.z;
+	const float terrain_search_z = use_compute_no_far_lod ? 60000.0f : terrain_fog_z;
+	VisibleTerrainZ = terrain_search_z;
+	Far_fog_border = terrain_fog_z;
 
 	// Set up our z wall
 	g3_SetFarClipZ(VisibleTerrainZ);
@@ -2021,7 +2042,15 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	// Get all of the cells visible to us
 	int nt = 0;
 	if (!use_mesh_terrain)
+	{
+		int saved_terrain_lod_engine_off = Terrain_LOD_engine_off;
+		if (use_compute_no_far_lod)
+			Terrain_LOD_engine_off = 1;
 		nt = GetVisibleTerrain(&viewer_eye, &viewer_orient);
+		Terrain_LOD_engine_off = saved_terrain_lod_engine_off;
+	}
+	VisibleTerrainZ = terrain_fog_z;
+	Far_fog_border = terrain_fog_z;
 
 	// Set this to really far away so our sky can render
 	g3_SetFarClipZ(60000);
@@ -2033,7 +2062,8 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 	//// Set up our z wall
 	rend_SetZBufferState(1);
 	rend_SetZBufferWriteMask(1);
-	if (use_mesh_terrain)
+	const float terrain_draw_far_clip = (use_mesh_terrain || use_compute_no_far_lod) ? 60000.0f : VisibleTerrainZ;
+	if (use_mesh_terrain || use_compute_no_far_lod)
 		g3_SetFarClipZ(60000);
 	else
 		g3_SetFarClipZ(VisibleTerrainZ);
@@ -2041,7 +2071,7 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 #ifndef NEWEDITOR
 	if ((Terrain_sky.flags & TF_FOG))
 	{
-		rend_SetZValues(0, use_mesh_terrain ? 60000.0f : VisibleTerrainZ);
+		rend_SetZValues(0, terrain_draw_far_clip);
 		rend_SetFogState(1);
 		rend_SetFogBorders(VisibleTerrainZ * Terrain_sky.fog_scalar, Far_fog_border);
 		rend_SetFogColor(Terrain_sky.fog_color);
@@ -2099,6 +2129,9 @@ void RenderTerrain(ubyte from_mine, int left, int top, int right, int bot)
 			DisplayTerrainList(nt);
 		}
 	}
+
+	if (use_compute_no_far_lod)
+		g3_SetFarClipZ(VisibleTerrainZ);
 
 	// Draw rooms
 	RenderTerrainRooms();

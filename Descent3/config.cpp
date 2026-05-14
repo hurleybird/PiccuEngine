@@ -1212,7 +1212,7 @@ struct video_menu
 		sheet->NewGroup(NULL, 0, 252);
 		if (OpenGLProfile == GLPROFILE_CORE)
 		{
-			sheet->AddText("OpenGL core requested 4.3, got %d.%d (%s)",
+			sheet->AddText("OpenGL core requested 4.5, got %d.%d (%s)",
 				RendererOpenGLMajorVersion,
 				RendererOpenGLMinorVersion,
 				RendererOpenGLVersionString[0] ? RendererOpenGLVersionString : "unknown");

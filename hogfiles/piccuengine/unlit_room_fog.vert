@@ -1,4 +1,4 @@
-#version 430 core
+#version 450 core
 
 layout(std140) uniform CommonBlock
 {

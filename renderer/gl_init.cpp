@@ -42,7 +42,7 @@ HGLRC ResourceContext;
 bool Already_loaded = false;
 
 constexpr int GL_CORE_MAJOR_VERSION = 4;
-constexpr int GL_CORE_MINOR_VERSION = 3;
+constexpr int GL_CORE_MINOR_VERSION = 5;
 
 // Sets default states for our renderer
 void GL3Renderer::SetDefaults()
@@ -148,9 +148,9 @@ int GL3Renderer::Setup(SDL_Window* window)
 			return 0;
 		}
 	}
-	if (!GLAD_GL_VERSION_4_3)
+	if (!GLAD_GL_VERSION_4_5)
 	{
-		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.3.\n");
+		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.5.\n");
 		return 0;
 	}
 
@@ -440,9 +440,9 @@ int GL3Renderer::Setup(HDC glhdc)
 			return 0;
 		}
 	}
-	if (!GLAD_GL_VERSION_4_3)
+	if (!GLAD_GL_VERSION_4_5)
 	{
-		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.3.\n");
+		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.5.\n");
 		return 0;
 	}
 
@@ -469,7 +469,7 @@ void GL3Renderer::GetInformation()
 	mprintf((0, "OpenGL Vendor: %s\n", glGetString(GL_VENDOR)));
 	mprintf((0, "OpenGL Renderer: %s\n", glGetString(GL_RENDERER)));
 	mprintf((0, "OpenGL Version: %s\n", version ? version : "unknown"));
-	mprintf((0, "PiccuEngine GL core path requested 4.3, got %d.%d (%s)\n",
+	mprintf((0, "PiccuEngine GL core path requested 4.5, got %d.%d (%s)\n",
 		RendererOpenGLMajorVersion, RendererOpenGLMinorVersion, RendererOpenGLVersionString));
 }
 
@@ -552,7 +552,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	}
 
 #if defined(GL_DEBUG) && !defined(NDEBUG)
-	OpenGL_debugging_enabled = GLAD_GL_VERSION_4_3 || CheckExtension("GL_KHR_debug");
+	OpenGL_debugging_enabled = GLAD_GL_VERSION_4_5 || CheckExtension("GL_KHR_debug");
 	if (OpenGL_debugging_enabled)
 	{
 		glDebugMessageCallback(GL_LogDebugMsg, nullptr);
@@ -600,7 +600,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	framebuffer_ok = false;
 	if (glGenFramebuffers == nullptr)
 	{
-		Error("OpenGL implementation does not appear to expose OpenGL 4.3.");
+		Error("OpenGL implementation does not appear to expose OpenGL 4.5.");
 		return 0;
 	}
 	framebuffer_ok = true;

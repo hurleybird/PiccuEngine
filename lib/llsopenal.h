@@ -49,6 +49,7 @@ struct llsOpenALSoundEntry
 	//True if the source is streaming and ready to be terminated.
 	bool terminate;
 	bool looping;
+	bool musicStream;
 	play_information* info;
 
 	bool is3d;
@@ -76,10 +77,14 @@ class llsOpenAL : public llsSystem
 
 	bool Initalized;
 	bool LoopPointsSupported, EffectsSupported;
+	bool HrtfSupported, HrtfEnabled, HrtfRequested;
+	int HrtfProfileApplied;
+	bool DirectChannelsSupported, SourceSpatializeSupported;
 	bool ReverbEnabled, DopplerEnabled;
 	char Quality;
 
 	int NumSoundChannels;
+	int ActiveSoundChannels;
 	int NumSoundsPlaying;
 	int NextUID;
 	llsOpenALSoundEntry* SoundEntries;
@@ -87,8 +92,10 @@ class llsOpenAL : public llsSystem
 	//OpenAL state
 	ALCcontext* Context;
 	ALCdevice* Device;
+	LPALCRESETDEVICESOFT alcResetDeviceSOFT;
 
 	ALuint AuxEffectSlot, EffectSlot;
+	ALuint HrtfDirectFilter;
 
 	const EAX2Reverb* LastReverb;
 	t3dEnvironmentToggles EnvToggles;
@@ -101,11 +108,20 @@ class llsOpenAL : public llsSystem
 	bool MovieStarted;
 	
 	bool ALErrorCheck(const char* context);
+	bool ApplyHrtf(bool enabled);
+	bool HrtfTuningActive() const;
+	float AdjustHrtfVolume(float volume, bool is3d, bool streaming, bool music_stream) const;
+	void ApplyHrtfSourceTuning(uint32_t handle, bool is3d, bool streaming, bool music_stream, int sound_index, float volume);
+	void RefreshHrtfTuning();
+	void UpdateHrtfDirectFilter();
+	void QueryHrtfStatus(const char* context);
+	void ApplyGeneralAudioTuning();
+	void ApplyReverbLevel();
 
 	short FindSoundSlot(vector where, float volume, int priority);
 
 	void InitSource2D(uint32_t handle, sound_info* soundInfo, float volume);
-	void InitSourceStreaming(uint32_t handle, float volume);
+	void InitSourceStreaming(uint32_t handle, float volume, bool music_stream);
 	void InitSource3D(uint32_t handle, sound_info* soundInfo, pos_state* posInfo, float volume);
 	void BindBufferData(uint32_t handle, int sound_index, bool looped);
 	void SoundCleanup(int soundID);
@@ -117,8 +133,12 @@ public:
 	{
 		Initalized = false;
 		LoopPointsSupported = EffectsSupported = false;
+		HrtfSupported = HrtfEnabled = HrtfRequested = false;
+		HrtfProfileApplied = -1;
+		DirectChannelsSupported = SourceSpatializeSupported = false;
 		Quality = SQT_HIGH;
 		NumSoundChannels = 0;
+		ActiveSoundChannels = 0;
 		NumSoundsPlaying = 0;
 		NextUID = 0;
 		SoundEntries = nullptr;
@@ -129,8 +149,10 @@ public:
 		ListenerRoomNum = 0;
 
 		Context = nullptr; Device = nullptr;
+		alcResetDeviceSOFT = nullptr;
 
 		AuxEffectSlot = EffectSlot = 0;
+		HrtfDirectFilter = 0;
 		LastReverb = nullptr;
 		ReverbEnabled = false;
 		DopplerEnabled = false;
@@ -163,6 +185,7 @@ public:
 
 	bool SetSoundQuality(char quality) override;
 	char GetSoundQuality(void) override;
+	bool SetSoundQuantity(int max_sounds_played) override;
 	bool SetSoundMixer(char mixer_type) override;
 	char GetSoundMixer(void) override;
 

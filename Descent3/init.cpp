@@ -141,6 +141,9 @@ extern bool Render_powerup_sparkles;
 extern int Use_file_xfer;
 extern bool Sound_reverb;
 extern bool Sound_doppler;
+extern float Sound_reverb_level;
+extern float Sound_doppler_level;
+extern bool Sound_hrtf;
 
 extern bool Mem_superlow_memory_mode;
 
@@ -358,6 +361,12 @@ void SaveGameSettings()
 	char tempbuffer[TEMPBUFFERSIZE];
 	int tempint;
 
+#define WRITE_FLOAT_SETTING(name, value) \
+	do { \
+		sprintf(tempbuffer, "%f", value); \
+		Database->write(name, tempbuffer, strlen(tempbuffer) + 1); \
+	} while (0)
+
 	sprintf(tempbuffer,"%f",Render_preferred_state.gamma);
 	Database->write("RS_gamma",tempbuffer,strlen(tempbuffer)+1);
 
@@ -460,6 +469,34 @@ void SaveGameSettings()
 	Database->write("SoundQuality", tempint);
 	Database->write("SoundReverbs", Sound_reverb);
 	Database->write("SoundDoppler", Sound_doppler);
+	WRITE_FLOAT_SETTING("SoundReverbLevel", Sound_reverb_level);
+	WRITE_FLOAT_SETTING("SoundDopplerLevel", Sound_doppler_level);
+	Database->write("SoundHRTF", Sound_hrtf);
+	WRITE_FLOAT_SETTING("SoundHRTFSfxGain", Sound_hrtf_sfx_gain);
+	WRITE_FLOAT_SETTING("SoundHRTF2dGain", Sound_hrtf_2d_gain);
+	WRITE_FLOAT_SETTING("SoundHRTF3dGain", Sound_hrtf_3d_gain);
+	WRITE_FLOAT_SETTING("SoundHRTFStreamGain", Sound_hrtf_stream_gain);
+	WRITE_FLOAT_SETTING("SoundHRTFBassGain", Sound_hrtf_bass_gain);
+	WRITE_FLOAT_SETTING("SoundHRTFBassCutoff", Sound_hrtf_bass_cutoff);
+	WRITE_FLOAT_SETTING("SoundHRTFTrebleGain", Sound_hrtf_treble_gain);
+	WRITE_FLOAT_SETTING("SoundHRTFTrebleCutoff", Sound_hrtf_treble_cutoff);
+	WRITE_FLOAT_SETTING("SoundHRTFEQMix", Sound_hrtf_eq_mix);
+	WRITE_FLOAT_SETTING("SoundHRTFHighDamping", Sound_hrtf_high_damping);
+	WRITE_FLOAT_SETTING("SoundHRTFRolloffScale", Sound_hrtf_rolloff_scale);
+	WRITE_FLOAT_SETTING("SoundHRTFReferenceDistanceScale", Sound_hrtf_reference_distance_scale);
+	WRITE_FLOAT_SETTING("SoundHRTFMaxDistanceScale", Sound_hrtf_max_distance_scale);
+	WRITE_FLOAT_SETTING("SoundHRTFDopplerScale", Sound_hrtf_doppler_scale);
+	Database->write("SoundHRTFProfile", Sound_hrtf_profile);
+	Database->write("SoundHRTFDistanceModel", Sound_hrtf_distance_model);
+	WRITE_FLOAT_SETTING("SoundDopplerBase", Sound_doppler_base);
+	WRITE_FLOAT_SETTING("SoundSourcePitch", Sound_source_pitch);
+	WRITE_FLOAT_SETTING("SoundSourceMaxGain", Sound_source_max_gain);
+	WRITE_FLOAT_SETTING("SoundConeAngleScale", Sound_cone_angle_scale);
+	WRITE_FLOAT_SETTING("SoundConeOuterGainScale", Sound_cone_outer_gain_scale);
+	WRITE_FLOAT_SETTING("SoundReverbDecayScale", Sound_reverb_decay_scale);
+	WRITE_FLOAT_SETTING("SoundReverbHFGainScale", Sound_reverb_hf_gain_scale);
+	WRITE_FLOAT_SETTING("SoundReverbLFGainScale", Sound_reverb_lf_gain_scale);
+	WRITE_FLOAT_SETTING("SoundHRTFMusicBypass", Sound_hrtf_music_bypass);
 
 	Database->write("SoundQuantity",Sound_system.GetLLSoundQuantity());
 
@@ -469,6 +506,8 @@ void SaveGameSettings()
 		Database->write("Default_pilot"," ",2);
 
 	Current_pilot.flush(false);
+
+#undef WRITE_FLOAT_SETTING
 }
 
 extern bool Game_gauge_do_time_test;
@@ -482,6 +521,13 @@ void LoadGameSettings()
 	char tempbuffer[TEMPBUFFERSIZE],*stoptemp;
 	int templen = TEMPBUFFERSIZE;
 	int tempint;
+
+#define READ_FLOAT_SETTING(name, value) \
+	do { \
+		templen = TEMPBUFFERSIZE; \
+		if (Database->read(name, tempbuffer, &templen)) \
+			value = strtod(tempbuffer, &stoptemp); \
+	} while (0)
 
 	//set defaults
 #ifdef _DEBUG
@@ -537,6 +583,34 @@ void LoadGameSettings()
 	Game_video_resolution = RES_640X480;
 	Sound_mixer = SOUND_MIXER_SOFTWARE_16;
 	Sound_quality = SQT_NORMAL;
+	Sound_reverb_level = Sound_reverb ? 0.5f : 0.0f;
+	Sound_doppler_level = Sound_doppler ? 0.5f : 0.0f;
+	Sound_hrtf = false;
+	Sound_hrtf_sfx_gain = 1.0f;
+	Sound_hrtf_2d_gain = 1.0f;
+	Sound_hrtf_3d_gain = 1.0f;
+	Sound_hrtf_stream_gain = 1.0f;
+	Sound_hrtf_bass_gain = 3.0f;
+	Sound_hrtf_bass_cutoff = 200.0f;
+	Sound_hrtf_treble_gain = 1.5f;
+	Sound_hrtf_treble_cutoff = 7000.0f;
+	Sound_hrtf_eq_mix = 0.75f;
+	Sound_hrtf_high_damping = 1.0f;
+	Sound_hrtf_rolloff_scale = 1.0f;
+	Sound_hrtf_reference_distance_scale = 1.0f;
+	Sound_hrtf_max_distance_scale = 1.0f;
+	Sound_hrtf_doppler_scale = 1.0f;
+	Sound_hrtf_profile = 0;
+	Sound_hrtf_distance_model = 0;
+	Sound_doppler_base = 0.5f;
+	Sound_source_pitch = 1.0f;
+	Sound_source_max_gain = 1.5f;
+	Sound_cone_angle_scale = 1.0f;
+	Sound_cone_outer_gain_scale = 1.0f;
+	Sound_reverb_decay_scale = 1.0f;
+	Sound_reverb_hf_gain_scale = 1.0f;
+	Sound_reverb_lf_gain_scale = 1.0f;
+	Sound_hrtf_music_bypass = 1.0f;
 	Missile_camera_window = SVW_LEFT;
 	Render_preferred_state.vsync_on = true;
 	Detail_settings.Fog_enabled = true;
@@ -765,6 +839,54 @@ void LoadGameSettings()
 
 	Database->read("SoundReverbs", &Sound_reverb);
 	Database->read("SoundDoppler", &Sound_doppler);
+	Sound_reverb_level = Sound_reverb ? 0.5f : 0.0f;
+	Sound_doppler_level = Sound_doppler ? 0.5f : 0.0f;
+	READ_FLOAT_SETTING("SoundReverbLevel", Sound_reverb_level);
+	READ_FLOAT_SETTING("SoundDopplerLevel", Sound_doppler_level);
+	Sound_reverb = Sound_reverb_level > 0.0f;
+	Sound_doppler = Sound_doppler_level > 0.0f;
+	Database->read("SoundHRTF", &Sound_hrtf);
+	READ_FLOAT_SETTING("SoundHRTFSfxGain", Sound_hrtf_sfx_gain);
+	READ_FLOAT_SETTING("SoundHRTF2dGain", Sound_hrtf_2d_gain);
+	READ_FLOAT_SETTING("SoundHRTF3dGain", Sound_hrtf_3d_gain);
+	READ_FLOAT_SETTING("SoundHRTFStreamGain", Sound_hrtf_stream_gain);
+	READ_FLOAT_SETTING("SoundHRTFBassGain", Sound_hrtf_bass_gain);
+	READ_FLOAT_SETTING("SoundHRTFBassCutoff", Sound_hrtf_bass_cutoff);
+	READ_FLOAT_SETTING("SoundHRTFTrebleGain", Sound_hrtf_treble_gain);
+	READ_FLOAT_SETTING("SoundHRTFTrebleCutoff", Sound_hrtf_treble_cutoff);
+	READ_FLOAT_SETTING("SoundHRTFEQMix", Sound_hrtf_eq_mix);
+	READ_FLOAT_SETTING("SoundHRTFHighDamping", Sound_hrtf_high_damping);
+	READ_FLOAT_SETTING("SoundHRTFRolloffScale", Sound_hrtf_rolloff_scale);
+	READ_FLOAT_SETTING("SoundHRTFReferenceDistanceScale", Sound_hrtf_reference_distance_scale);
+	READ_FLOAT_SETTING("SoundHRTFMaxDistanceScale", Sound_hrtf_max_distance_scale);
+	READ_FLOAT_SETTING("SoundHRTFDopplerScale", Sound_hrtf_doppler_scale);
+	Database->read_int("SoundHRTFProfile", &Sound_hrtf_profile);
+	Database->read_int("SoundHRTFDistanceModel", &Sound_hrtf_distance_model);
+	READ_FLOAT_SETTING("SoundDopplerBase", Sound_doppler_base);
+	READ_FLOAT_SETTING("SoundSourcePitch", Sound_source_pitch);
+	READ_FLOAT_SETTING("SoundSourceMaxGain", Sound_source_max_gain);
+	READ_FLOAT_SETTING("SoundConeAngleScale", Sound_cone_angle_scale);
+	READ_FLOAT_SETTING("SoundConeOuterGainScale", Sound_cone_outer_gain_scale);
+	READ_FLOAT_SETTING("SoundReverbDecayScale", Sound_reverb_decay_scale);
+	READ_FLOAT_SETTING("SoundReverbHFGainScale", Sound_reverb_hf_gain_scale);
+	READ_FLOAT_SETTING("SoundReverbLFGainScale", Sound_reverb_lf_gain_scale);
+	READ_FLOAT_SETTING("SoundHRTFMusicBypass", Sound_hrtf_music_bypass);
+
+	Sound_hrtf_sfx_gain = 1.0f;
+	Sound_hrtf_2d_gain = 1.0f;
+	Sound_hrtf_3d_gain = 1.0f;
+	Sound_hrtf_stream_gain = 1.0f;
+	Sound_hrtf_bass_gain = 3.0f;
+	Sound_hrtf_bass_cutoff = 200.0f;
+	Sound_hrtf_treble_gain = 1.5f;
+	Sound_hrtf_treble_cutoff = 7000.0f;
+	Sound_hrtf_eq_mix = 0.75f;
+	Sound_hrtf_high_damping = 1.0f;
+	Sound_hrtf_rolloff_scale = 1.0f;
+	Sound_hrtf_reference_distance_scale = 1.0f;
+	Sound_hrtf_max_distance_scale = 1.0f;
+	Sound_hrtf_doppler_scale = 1.0f;
+	Sound_source_max_gain = 1.5f;
 
 	Sound_card_name[0] = 0;
 	templen = TEMPBUFFERSIZE;
@@ -798,6 +920,8 @@ void LoadGameSettings()
 	{
 		Render_powerup_sparkles = true;
 	}
+
+#undef READ_FLOAT_SETTING
 
 #ifdef GAMEGAUGE
 	// Setup some default params for gamegauge

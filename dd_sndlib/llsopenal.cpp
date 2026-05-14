@@ -18,6 +18,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <cmath>
+#include <vector>
 #include "mono.h"
 #include "pserror.h"
 
@@ -26,6 +28,35 @@
 
 //Configuration
 bool ConfigUseReverbs = false;
+extern bool Sound_hrtf;
+extern float Sound_doppler_level;
+extern float Sound_reverb_level;
+extern float Sound_hrtf_sfx_gain;
+extern float Sound_hrtf_2d_gain;
+extern float Sound_hrtf_3d_gain;
+extern float Sound_hrtf_stream_gain;
+extern float Sound_hrtf_bass_gain;
+extern float Sound_hrtf_bass_cutoff;
+extern float Sound_hrtf_treble_gain;
+extern float Sound_hrtf_treble_cutoff;
+extern float Sound_hrtf_eq_mix;
+extern float Sound_hrtf_high_damping;
+extern float Sound_hrtf_rolloff_scale;
+extern float Sound_hrtf_reference_distance_scale;
+extern float Sound_hrtf_max_distance_scale;
+extern float Sound_hrtf_doppler_scale;
+extern int Sound_hrtf_profile;
+extern int Sound_hrtf_profile_count;
+extern int Sound_hrtf_distance_model;
+extern float Sound_doppler_base;
+extern float Sound_source_pitch;
+extern float Sound_source_max_gain;
+extern float Sound_cone_angle_scale;
+extern float Sound_cone_outer_gain_scale;
+extern float Sound_reverb_decay_scale;
+extern float Sound_reverb_hf_gain_scale;
+extern float Sound_reverb_lf_gain_scale;
+extern float Sound_hrtf_music_bypass;
 
 LPALGENAUXILIARYEFFECTSLOTS dalGenAuxiliaryEffectSlots;
 LPALGENEFFECTS dalGenEffects;
@@ -39,12 +70,129 @@ LPALBUFFERCALLBACKSOFT dalBufferCallbackSOFT;
 LPALGETBUFFERPTRSOFT dalGetBufferPtrSOFT;
 LPALGETBUFFER3PTRSOFT dalGetBuffer3PtrSOFT;
 LPALGETBUFFERPTRVSOFT dalGetBufferPtrvSOFT;
+LPALGENFILTERS dalGenFilters;
+LPALDELETEFILTERS dalDeleteFilters;
+LPALFILTERI dalFilteri;
+LPALFILTERF dalFilterf;
 
 //Hack: Maybe will fix problems with streaming system
 bool streamStartedthisFrame = false;
 
-constexpr float DEFAULT_SOUNDDOPPLERMULT = 0.5f;
-float SoundDopplerMult = DEFAULT_SOUNDDOPPLERMULT;
+float SoundDopplerMult = 0.5f;
+float ReverbLevel = 1.0f;
+
+static const char* HrtfStatusName(ALCint status)
+{
+	switch (status)
+	{
+	case ALC_HRTF_DISABLED_SOFT:
+		return "disabled";
+	case ALC_HRTF_ENABLED_SOFT:
+		return "enabled";
+	case ALC_HRTF_DENIED_SOFT:
+		return "denied";
+	case ALC_HRTF_REQUIRED_SOFT:
+		return "required";
+	case ALC_HRTF_HEADPHONES_DETECTED_SOFT:
+		return "headphones detected";
+	case ALC_HRTF_UNSUPPORTED_FORMAT_SOFT:
+		return "unsupported output format";
+	default:
+		return "unknown";
+	}
+}
+
+static void AddContextAttribute(ALCint* attribs, int& count, ALCint name, ALCint value)
+{
+	attribs[count++] = name;
+	attribs[count++] = value;
+	attribs[count] = 0;
+}
+
+static float ClampFloat(float value, float min_value, float max_value)
+{
+	return std::max(min_value, std::min(value, max_value));
+}
+
+static int ClampInt(int value, int min_value, int max_value)
+{
+	return std::max(min_value, std::min(value, max_value));
+}
+
+static ALenum DistanceModelValue()
+{
+	switch (Sound_hrtf_distance_model)
+	{
+	case 1:
+		return AL_INVERSE_DISTANCE_CLAMPED;
+	case 2:
+		return AL_EXPONENT_DISTANCE_CLAMPED;
+	default:
+		return AL_LINEAR_DISTANCE_CLAMPED;
+	}
+}
+
+static bool HrtfSampleEqActive()
+{
+	return Sound_hrtf && Sound_hrtf_eq_mix > 0.0f &&
+		(std::fabs(Sound_hrtf_bass_gain - 1.0f) > 0.001f ||
+			std::fabs(Sound_hrtf_treble_gain - 1.0f) > 0.001f);
+}
+
+static float LowpassAlpha(float cutoff, float sample_rate)
+{
+	constexpr float two_pi = 6.28318530717958647692f;
+	cutoff = ClampFloat(cutoff, 20.0f, sample_rate * 0.45f);
+	const float dt = 1.0f / sample_rate;
+	const float rc = 1.0f / (two_pi * cutoff);
+	return dt / (rc + dt);
+}
+
+static float ProcessHrtfSample(float input, float& bass_low, float bass_alpha, float& treble_low, float treble_alpha)
+{
+	const float bass_gain = ClampFloat(Sound_hrtf_bass_gain, 0.50f, 3.00f);
+	const float treble_gain = ClampFloat(Sound_hrtf_treble_gain, 0.25f, 1.50f);
+	const float mix = ClampFloat(Sound_hrtf_eq_mix, 0.0f, 1.0f);
+
+	bass_low += bass_alpha * (input - bass_low);
+	const float bassed = bass_low * bass_gain + (input - bass_low);
+
+	treble_low += treble_alpha * (bassed - treble_low);
+	const float eq = treble_low + (bassed - treble_low) * treble_gain;
+	return ClampFloat(input + (eq - input) * mix, -1.0f, 1.0f);
+}
+
+static void ProcessHrtfSamples16(const short* src, int samples, std::vector<short>& dst)
+{
+	dst.resize(samples);
+	const float bass_alpha = LowpassAlpha(Sound_hrtf_bass_cutoff, 22050.0f);
+	const float treble_alpha = LowpassAlpha(Sound_hrtf_treble_cutoff, 22050.0f);
+	float bass_low = 0.0f;
+	float treble_low = 0.0f;
+
+	for (int i = 0; i < samples; i++)
+	{
+		const float input = ClampFloat(src[i] / 32768.0f, -1.0f, 1.0f);
+		const float output = ProcessHrtfSample(input, bass_low, bass_alpha, treble_low, treble_alpha);
+		dst[i] = (short)ClampFloat(output * 32767.0f, -32768.0f, 32767.0f);
+	}
+}
+
+static void ProcessHrtfSamples8(const unsigned char* src, int samples, std::vector<unsigned char>& dst)
+{
+	dst.resize(samples);
+	const float bass_alpha = LowpassAlpha(Sound_hrtf_bass_cutoff, 22050.0f);
+	const float treble_alpha = LowpassAlpha(Sound_hrtf_treble_cutoff, 22050.0f);
+	float bass_low = 0.0f;
+	float treble_low = 0.0f;
+
+	for (int i = 0; i < samples; i++)
+	{
+		const float input = ClampFloat(((int)src[i] - 128) / 128.0f, -1.0f, 1.0f);
+		const float output = ProcessHrtfSample(input, bass_low, bass_alpha, treble_low, treble_alpha);
+		dst[i] = (unsigned char)ClampFloat(output * 127.0f + 128.0f, 0.0f, 255.0f);
+	}
+}
 
 //llsOpenAL implementation
 void llsOpenAL::SetSoundCard(const char* name)
@@ -54,7 +202,8 @@ void llsOpenAL::SetSoundCard(const char* name)
 int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char max_sounds_played)
 {
 	int i, numsends;
-	ALCint attribs[4] = {};
+	ALCint attribs[8] = {};
+	int attrib_count = 0;
 	Device = alcOpenDevice(nullptr);
 	//ALErrorCheck("Opening device");
 	if (!Device)
@@ -63,8 +212,28 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 		return 0;
 	}
 
+	HrtfSupported = alcIsExtensionPresent(Device, "ALC_SOFT_HRTF") != ALC_FALSE;
+	HrtfRequested = Sound_hrtf;
+	HrtfEnabled = false;
+	Sound_hrtf_profile_count = 0;
+	alcResetDeviceSOFT = nullptr;
+	if (HrtfSupported)
+	{
+		alcResetDeviceSOFT = (LPALCRESETDEVICESOFT)alcGetProcAddress(Device, "alcResetDeviceSOFT");
+		ALCint num_hrtf = 0;
+		alcGetIntegerv(Device, ALC_NUM_HRTF_SPECIFIERS_SOFT, 1, &num_hrtf);
+		Sound_hrtf_profile_count = std::max(0, (int)num_hrtf);
+		Sound_hrtf_profile = ClampInt(Sound_hrtf_profile, 0, std::max(0, Sound_hrtf_profile_count - 1));
+		AddContextAttribute(attribs, attrib_count, ALC_HRTF_SOFT, Sound_hrtf ? ALC_TRUE : ALC_FALSE);
+		if (Sound_hrtf && Sound_hrtf_profile_count > 0)
+			AddContextAttribute(attribs, attrib_count, ALC_HRTF_ID_SOFT, Sound_hrtf_profile);
+	}
+	else if (Sound_hrtf)
+	{
+		mprintf((0, "OpenAL HRTF requested, but ALC_SOFT_HRTF is not present."));
+	}
 
-	EffectsSupported = alcIsExtensionPresent(nullptr, "ALC_EXT_EFX") != AL_FALSE;
+	EffectsSupported = alcIsExtensionPresent(Device, "ALC_EXT_EFX") != AL_FALSE;
 	if (!EffectsSupported)
 		mprintf((0, "OpenAL effects extension not present!"));
 	else
@@ -76,12 +245,11 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 		else
 		{
 			//Just one environment available, so only one send needed
-			attribs[0] = ALC_MAX_AUXILIARY_SENDS;
-			attribs[1] = 1;
+			AddContextAttribute(attribs, attrib_count, ALC_MAX_AUXILIARY_SENDS, 1);
 		}
 	}
 
-	Context = alcCreateContext(Device, attribs);
+	Context = alcCreateContext(Device, attrib_count > 0 ? attribs : nullptr);
 	//ALErrorCheck("Creating context");
 	if (!Context)
 	{
@@ -90,6 +258,7 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 		return 0;
 	}
 	alcMakeContextCurrent(Context);
+	QueryHrtfStatus("startup");
 
 	const char* test = alGetString(AL_EXTENSIONS);
 	mprintf((0, "AL_EXTENSIONS: %s\n", test));
@@ -97,6 +266,8 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 	LoopPointsSupported = alIsExtensionPresent("AL_SOFT_loop_points") != AL_FALSE;
 	if (!LoopPointsSupported)
 		mprintf((0, "OpenAL Soft loop points extension not present!"));
+	DirectChannelsSupported = alIsExtensionPresent("AL_SOFT_direct_channels") != AL_FALSE;
+	SourceSpatializeSupported = alIsExtensionPresent("AL_SOFT_source_spatialize") != AL_FALSE;
 
 	if (alIsExtensionPresent("AL_SOFT_callback_buffer") == AL_FALSE)
 	{
@@ -122,9 +293,10 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 		EffectsSupported = false;
 	}
 
-	alDistanceModel(AL_LINEAR_DISTANCE_CLAMPED);
+	alDistanceModel(DistanceModelValue());
 
-	NumSoundChannels = max_sounds_played;
+	const int requested_channels = max_sounds_played;
+	NumSoundChannels = requested_channels;
 	SoundEntries = (llsOpenALSoundEntry*)malloc(sizeof(llsOpenALSoundEntry) * NumSoundChannels);
 	if (!SoundEntries)
 	{
@@ -133,12 +305,35 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 	}
 	memset(SoundEntries, 0, sizeof(llsOpenALSoundEntry) * NumSoundChannels);
 
-	//Create sources for all entries now
-	for (i = 0; i < NumSoundChannels; i++)
+	// Create as many sources as the OpenAL device will actually allow, up to the requested limit.
+	alGetError();
+	int created_sources = 0;
+	for (i = 0; i < requested_channels; i++)
 	{
 		alGenSources(1, &SoundEntries[i].handle);
+		ALenum error = alGetError();
+		if (error != AL_NO_ERROR || SoundEntries[i].handle == 0)
+		{
+			mprintf((0, "OpenAL created %d of %d requested sound sources, stopping at error 0x%x.", created_sources, requested_channels, error));
+			break;
+		}
+		created_sources++;
 	}
-	ALErrorCheck("Creating default sources");
+	NumSoundChannels = created_sources;
+	if (NumSoundChannels <= 0)
+	{
+		mprintf((0, "OpenAL failed to create any sound sources."));
+		free(SoundEntries);
+		SoundEntries = nullptr;
+		alcMakeContextCurrent(nullptr);
+		alcDestroyContext(Context);
+		alcCloseDevice(Device);
+		Context = nullptr;
+		Device = nullptr;
+		return 0;
+	}
+	ActiveSoundChannels = NumSoundChannels;
+
 	for (i = 0; i < NumSoundChannels; i++)
 	{
 		alGenBuffers(1, &SoundEntries[i].bufferHandle);
@@ -156,8 +351,13 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 		dalEffectf = (LPALEFFECTF)alGetProcAddress("alEffectf");
 		dalEffectfv = (LPALEFFECTFV)alGetProcAddress("alEffectfv");
 		dalAuxiliaryEffectSloti = (LPALAUXILIARYEFFECTSLOTI)alGetProcAddress("alAuxiliaryEffectSloti");
+		dalGenFilters = (LPALGENFILTERS)alGetProcAddress("alGenFilters");
+		dalDeleteFilters = (LPALDELETEFILTERS)alGetProcAddress("alDeleteFilters");
+		dalFilteri = (LPALFILTERI)alGetProcAddress("alFilteri");
+		dalFilterf = (LPALFILTERF)alGetProcAddress("alFilterf");
 
-		if (!dalGenAuxiliaryEffectSlots || !dalDeleteAuxiliaryEffectSlots || !dalGenEffects || !dalDeleteEffects || !dalEffecti || !dalEffectf || !dalAuxiliaryEffectSloti)
+		if (!dalGenAuxiliaryEffectSlots || !dalDeleteAuxiliaryEffectSlots || !dalGenEffects || !dalDeleteEffects || !dalEffecti || !dalEffectf || !dalAuxiliaryEffectSloti ||
+			!dalGenFilters || !dalDeleteFilters || !dalFilteri || !dalFilterf)
 		{
 			mprintf((0, "Failed to get OpenAL effects extension function pointers."));
 			EffectsSupported = false;
@@ -170,6 +370,9 @@ int llsOpenAL::InitSoundLib(char mixer_type, oeApplication* sos, unsigned char m
 			ALErrorCheck("Creating effect");
 			dalGenAuxiliaryEffectSlots(1, &AuxEffectSlot);
 			ALErrorCheck("Creating aux effect");
+			dalGenFilters(1, &HrtfDirectFilter);
+			ALErrorCheck("Creating HRTF direct filter");
+			UpdateHrtfDirectFilter();
 
 			//Make the effect an EAX reverb
 			dalEffecti(EffectSlot, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB);
@@ -189,6 +392,22 @@ void llsOpenAL::DestroySoundLib(void)
 	//MessageBoxA(nullptr, "Horrible hack has been shutdown", "Cursed", MB_OK);
 	if (Initalized)
 	{
+		if (HrtfDirectFilter && dalDeleteFilters)
+		{
+			dalDeleteFilters(1, &HrtfDirectFilter);
+			HrtfDirectFilter = 0;
+		}
+		if (EffectSlot && dalDeleteEffects)
+		{
+			dalDeleteEffects(1, &EffectSlot);
+			EffectSlot = 0;
+		}
+		if (AuxEffectSlot && dalDeleteAuxiliaryEffectSlots)
+		{
+			dalDeleteAuxiliaryEffectSlots(1, &AuxEffectSlot);
+			AuxEffectSlot = 0;
+		}
+
 		alcMakeContextCurrent(nullptr);
 		alcDestroyContext(Context);
 		alcCloseDevice(Device);
@@ -200,6 +419,9 @@ void llsOpenAL::DestroySoundLib(void)
 
 		mprintf((0, "OpenAL LLS shut down."));
 		Initalized = false;
+		HrtfSupported = HrtfEnabled = HrtfRequested = false;
+		DirectChannelsSupported = SourceSpatializeSupported = false;
+		alcResetDeviceSOFT = nullptr;
 	}
 }
 
@@ -226,6 +448,61 @@ char llsOpenAL::GetSoundQuality(void)
 	return Quality;
 }
 
+bool llsOpenAL::SetSoundQuantity(int max_sounds_played)
+{
+	if (max_sounds_played <= 0)
+		return false;
+	if (!Initalized || !SoundEntries)
+		return false;
+
+	if (max_sounds_played <= NumSoundChannels)
+	{
+		ActiveSoundChannels = max_sounds_played;
+		return true;
+	}
+
+	llsOpenALSoundEntry* resized_entries = (llsOpenALSoundEntry*)realloc(SoundEntries,
+		sizeof(llsOpenALSoundEntry) * max_sounds_played);
+	if (!resized_entries)
+	{
+		mprintf((0, "OpenAL failed to expand sound source table to %d entries.", max_sounds_played));
+		ActiveSoundChannels = NumSoundChannels;
+		return true;
+	}
+
+	SoundEntries = resized_entries;
+	memset(&SoundEntries[NumSoundChannels], 0, sizeof(llsOpenALSoundEntry) * (max_sounds_played - NumSoundChannels));
+
+	alGetError();
+	int created_sources = NumSoundChannels;
+	for (int i = NumSoundChannels; i < max_sounds_played; i++)
+	{
+		alGenSources(1, &SoundEntries[i].handle);
+		ALenum error = alGetError();
+		if (error != AL_NO_ERROR || SoundEntries[i].handle == 0)
+		{
+			mprintf((0, "OpenAL expanded to %d of %d requested sound sources, stopping at error 0x%x.", created_sources, max_sounds_played, error));
+			break;
+		}
+
+		alGenBuffers(1, &SoundEntries[i].bufferHandle);
+		error = alGetError();
+		if (error != AL_NO_ERROR || SoundEntries[i].bufferHandle == 0)
+		{
+			mprintf((0, "OpenAL failed to create a default buffer for source %d, stopping at error 0x%x.", i, error));
+			alDeleteSources(1, &SoundEntries[i].handle);
+			SoundEntries[i].handle = 0;
+			break;
+		}
+
+		created_sources++;
+	}
+
+	NumSoundChannels = created_sources;
+	ActiveSoundChannels = NumSoundChannels;
+	return true;
+}
+
 bool llsOpenAL::SetSoundMixer(char mixer_type)
 {
 	return false;
@@ -248,6 +525,7 @@ int llsOpenAL::PlaySound2d(play_information* play_info, int sound_index, float v
 
 	//PutLog(LogLevel::Info, "Initializing 2D source.");
 	InitSource2D(SoundEntries[sound_uid].handle, &Sounds[sound_index], volume);
+	ApplyHrtfSourceTuning(SoundEntries[sound_uid].handle, false, false, false, sound_index, volume);
 	SoundEntries[sound_uid].looping = false;
 	if (looped)
 	{
@@ -278,6 +556,7 @@ int llsOpenAL::PlaySound2d(play_information* play_info, int sound_index, float v
 	SoundEntries[sound_uid].soundNum = sound_index;
 	SoundEntries[sound_uid].soundUID = NextUID * 256 + sound_uid;
 	SoundEntries[sound_uid].is3d = false;
+	SoundEntries[sound_uid].musicStream = false;
 	//PutLog(LogLevel::Info, "Starting 2D sound %s with uid %d (slot %d)", pSoundFiles[pSounds[sound_index].sample_index].name, SoundEntries[sound_uid].soundUID, sound_uid);
 
 	NumSoundsPlaying++;
@@ -290,11 +569,12 @@ int llsOpenAL::PlayStream(play_information* play_info)
 	float peakVolume = std::max(play_info->left_volume, play_info->right_volume);
 	if (!Initalized) return -1;
 	short sound_uid = FindSoundSlot(ListenerPosition, peakVolume, play_info->priority);
-	if (sound_uid < 0) 
+	if (sound_uid < 0)
 		return -1;
+	const bool music_stream = (play_info->m_stream_format & SIF_STREAMING_MUSIC) != 0;
 
 	//PutLog(LogLevel::Info, "Starting a stream");
-	InitSourceStreaming(SoundEntries[sound_uid].handle, peakVolume);
+	InitSourceStreaming(SoundEntries[sound_uid].handle, peakVolume, music_stream);
 
 	//Generate buffers
 	alGenBuffers(NUM_STREAMING_BUFFERS, SoundEntries[sound_uid].bufferHandles);
@@ -333,8 +613,10 @@ int llsOpenAL::PlayStream(play_information* play_info)
 	SoundEntries[sound_uid].terminate = false;
 	SoundEntries[sound_uid].volume = peakVolume;
 	SoundEntries[sound_uid].info = play_info;
+	SoundEntries[sound_uid].soundNum = -1;
 	SoundEntries[sound_uid].soundUID = NextUID * 256 + sound_uid;
 	SoundEntries[sound_uid].is3d = false;
+	SoundEntries[sound_uid].musicStream = music_stream;
 
 	NumSoundsPlaying++;
 	//PutLog(LogLevel::Info, "Starting stream with uid %d (slot %d). Format is %d. Buffer size is %d. Stream size is %d.", SoundEntries[sound_uid].soundUID, sound_uid, play_info->m_stream_format, play_info->m_stream_bufsize, play_info->m_stream_size);
@@ -377,6 +659,7 @@ int llsOpenAL::PlaySound3d(play_information* play_info, int sound_index, pos_sta
 	bool looped = f_looped || (Sounds[sound_index].flags & SPF_LOOPED) != 0;
 
 	InitSource3D(SoundEntries[sound_uid].handle, &Sounds[sound_index], cur_pos, master_volume);
+	ApplyHrtfSourceTuning(SoundEntries[sound_uid].handle, true, false, false, sound_index, master_volume);
 	SoundEntries[sound_uid].looping = false;
 	if (looped)
 	{
@@ -405,6 +688,7 @@ int llsOpenAL::PlaySound3d(play_information* play_info, int sound_index, pos_sta
 	SoundEntries[sound_uid].soundNum = sound_index;
 	SoundEntries[sound_uid].soundUID = NextUID * 256 + sound_uid;
 	SoundEntries[sound_uid].is3d = true;
+	SoundEntries[sound_uid].musicStream = false;
 	SoundEntries[sound_uid].lastpos = *cur_pos->position;
 	//PutLog(LogLevel::Info, "Starting 3D sound %s with uid %d (slot %d)", pSoundFiles[pSounds[sound_index].sample_index].name, SoundEntries[sound_uid].soundUID, sound_uid);
 
@@ -420,7 +704,8 @@ void llsOpenAL::AdjustSound(int sound_uid, float f_volume, float f_pan, unsigned
 	if (!SoundEntries || id < 0 || id >= NumSoundChannels || SoundEntries[id].soundUID != sound_uid) return;
 
 	ALuint handle = SoundEntries[id].handle;
-	alSourcef(handle, AL_GAIN, f_volume);
+	SoundEntries[id].volume = f_volume;
+	alSourcef(handle, AL_GAIN, AdjustHrtfVolume(f_volume, SoundEntries[id].is3d, SoundEntries[id].streaming, SoundEntries[id].musicStream));
 	ALErrorCheck("Adjusting sound volume.");
 	//TODO: pan, frequency. Are these used?
 }
@@ -442,7 +727,8 @@ void llsOpenAL::AdjustSound(int sound_uid, pos_state* cur_pos, float adjusted_vo
 	alSource3f(handle, AL_POSITION, -cur_pos->position->x, cur_pos->position->y, cur_pos->position->z);
 	if (ALErrorCheck("Adjusting sound position."))
 		mprintf((0, "\t(%f %f %f) (%f %f %f)", -cur_pos->velocity->x, cur_pos->velocity->y, cur_pos->velocity->z, -cur_pos->position->x, cur_pos->position->y, cur_pos->position->z));
-	alSourcef(handle, AL_GAIN, adjusted_volume);
+	SoundEntries[id].volume = adjusted_volume;
+	alSourcef(handle, AL_GAIN, AdjustHrtfVolume(adjusted_volume, true, false, false));
 	ALErrorCheck("Adjusting sound gain.");
 
 	SoundEntries[id].lastpos = *cur_pos->position;
@@ -614,14 +900,13 @@ bool llsOpenAL::SetGlobalReverbProperties(const EAX2Reverb* reverb)
 	ALErrorCheck("Clearing entry error in reverb properties.");
 	if (!EffectsSupported)
 		return false;
-
-	if (reverb == LastReverb)
-		return true;
+	if (!reverb)
+		return false;
 
 	LastReverb = reverb;
 
 	//This happens after LastReverb is set so I can be sure that it's always the most recent environment. 
-	if (!ReverbEnabled)
+	if (!ReverbEnabled || ReverbLevel <= 0.0f)
 		return true;
 
 	//Make the aux effect slot use the effect
@@ -640,19 +925,19 @@ bool llsOpenAL::SetGlobalReverbProperties(const EAX2Reverb* reverb)
 	ALErrorCheck("Setting reverb density");
 	dalEffectf(EffectSlot, AL_EAXREVERB_DIFFUSION, reverb->diffusion);
 	ALErrorCheck("Setting reverb diffusion");
-	dalEffectf(EffectSlot, AL_EAXREVERB_GAIN, reverb->gain);
+	dalEffectf(EffectSlot, AL_EAXREVERB_GAIN, reverb->gain * ReverbLevel);
 	ALErrorCheck("Setting reverb gain");
-	dalEffectf(EffectSlot, AL_EAXREVERB_GAINHF, reverb->gain_hf);
+	dalEffectf(EffectSlot, AL_EAXREVERB_GAINHF, reverb->gain_hf * ClampFloat(Sound_reverb_hf_gain_scale, 0.0f, 2.0f));
 	ALErrorCheck("Setting reverb gain hf");
-	dalEffectf(EffectSlot, AL_EAXREVERB_GAINLF, reverb->gain_lf);
+	dalEffectf(EffectSlot, AL_EAXREVERB_GAINLF, reverb->gain_lf * ClampFloat(Sound_reverb_lf_gain_scale, 0.0f, 2.0f));
 	ALErrorCheck("Setting reverb gain lf");
-	dalEffectf(EffectSlot, AL_EAXREVERB_DECAY_TIME, reverb->decay_time);
+	dalEffectf(EffectSlot, AL_EAXREVERB_DECAY_TIME, reverb->decay_time * ClampFloat(Sound_reverb_decay_scale, 0.25f, 4.0f));
 	ALErrorCheck("Setting reverb decay time");
 	dalEffectf(EffectSlot, AL_EAXREVERB_DECAY_HFRATIO, reverb->decay_hf_ratio);
 	ALErrorCheck("Setting reverb decay hf ratio");
 	dalEffectf(EffectSlot, AL_EAXREVERB_DECAY_LFRATIO, reverb->decay_lf_ratio);
 	ALErrorCheck("Setting reverb decay lf ratio");
-	dalEffectf(EffectSlot, AL_EAXREVERB_REFLECTIONS_GAIN, reverb->reflection_gain);
+	dalEffectf(EffectSlot, AL_EAXREVERB_REFLECTIONS_GAIN, reverb->reflection_gain * ReverbLevel);
 	ALErrorCheck("Setting reverb reflection gain");
 	dalEffectf(EffectSlot, AL_EAXREVERB_REFLECTIONS_DELAY, reverb->reflection_delay);
 	ALErrorCheck("Setting reverb reflection delay");
@@ -660,7 +945,7 @@ bool llsOpenAL::SetGlobalReverbProperties(const EAX2Reverb* reverb)
 	ALErrorCheck("Setting reverb reflection pan");
 	dalEffectf(EffectSlot, AL_EAXREVERB_LATE_REVERB_DELAY, reverb->late_reverb_delay);
 	ALErrorCheck("Setting reverb late reverb delay");
-	dalEffectf(EffectSlot, AL_EAXREVERB_LATE_REVERB_GAIN, reverb->late_reverb_gain);
+	dalEffectf(EffectSlot, AL_EAXREVERB_LATE_REVERB_GAIN, reverb->late_reverb_gain * ReverbLevel);
 	ALErrorCheck("Setting reverb late reverb gain");
 	dalEffectfv(EffectSlot, AL_EAXREVERB_LATE_REVERB_PAN, reverb->late_reverb_pan);
 	ALErrorCheck("Setting reverb late_reverb_pan");
@@ -700,28 +985,69 @@ void llsOpenAL::GetEnvironmentValues(t3dEnvironmentValues* env)
 
 void llsOpenAL::SetEnvironmentToggles(const t3dEnvironmentToggles* env)
 {
-	ReverbEnabled = env->reverb;
-	if (!ReverbEnabled)
+	if (env->flags == 0 || (env->flags & ENV3dVALF_REVERBS))
 	{
-		dalAuxiliaryEffectSloti(AuxEffectSlot, AL_EFFECTSLOT_EFFECT, 0);
-		ALErrorCheck("Setting aux effect slot");
-	}
-	else if (LastReverb != nullptr)
-	{
-		//LastReverb should be maintained so I can get the correct environment immediately.
-		SetGlobalReverbProperties(LastReverb);
+		const bool was_reverb_active = ReverbEnabled && ReverbLevel > 0.0f;
+		ReverbLevel = ClampFloat(env->reverb_scalar, 0.0f, 1.0f);
+		ReverbEnabled = env->reverb;
+		if (EffectsSupported && dalAuxiliaryEffectSloti)
+		{
+			if (!ReverbEnabled || ReverbLevel <= 0.0f)
+			{
+				dalAuxiliaryEffectSloti(AuxEffectSlot, AL_EFFECTSLOT_EFFECT, 0);
+				ALErrorCheck("Setting aux effect slot");
+			}
+			else if (LastReverb != nullptr)
+			{
+				//LastReverb should be maintained so I can get the correct environment immediately.
+				if (was_reverb_active)
+					ApplyReverbLevel();
+				else
+					SetGlobalReverbProperties(LastReverb);
+			}
+		}
 	}
 
-	DopplerEnabled = env->doppler;
-	if (!DopplerEnabled)
-		SoundDopplerMult = 0;
-	else
-		SoundDopplerMult = DEFAULT_SOUNDDOPPLERMULT;
+	if (env->flags == 0 || (env->flags & ENV3DVALF_DOPPLER))
+	{
+		DopplerEnabled = env->doppler;
+		const float doppler_level = ClampFloat(env->doppler_scalar, 0.0f, 1.0f);
+		if (!DopplerEnabled)
+			SoundDopplerMult = 0;
+		else
+			SoundDopplerMult = ClampFloat(Sound_doppler_base, 0.0f, 2.0f) * doppler_level * (HrtfTuningActive() ? ClampFloat(Sound_hrtf_doppler_scale, 0.0f, 2.0f) : 1.0f);
+
+		for (int i = 0; SoundEntries && i < NumSoundChannels; i++)
+		{
+			if (SoundEntries[i].playing && SoundEntries[i].is3d)
+				alSourcef(SoundEntries[i].handle, AL_DOPPLER_FACTOR, SoundDopplerMult);
+		}
+	}
+
+	if (env->flags == 0 || (env->flags & ENV3DVALF_HRTF))
+	{
+		const bool hrtf_changed = HrtfRequested != env->hrtf || HrtfProfileApplied != Sound_hrtf_profile;
+		if (hrtf_changed)
+			ApplyHrtf(env->hrtf);
+		else
+			RefreshHrtfTuning();
+		ApplyGeneralAudioTuning();
+	}
+
+	ALErrorCheck("Setting environment toggles");
 }
 
 void llsOpenAL::GetEnvironmentToggles(t3dEnvironmentToggles* env)
 {
-	env->flags = ENV3DVALF_DOPPLER | ENV3dVALF_REVERBS;
+	env->flags = ENV3DVALF_DOPPLER | ENV3dVALF_REVERBS | ENV3DVALF_HRTF;
+	env->supported = ENV3DVALF_DOPPLER | ENV3dVALF_REVERBS;
+	if (HrtfSupported)
+		env->supported |= ENV3DVALF_HRTF;
+	env->doppler = DopplerEnabled;
+	env->reverb = ReverbEnabled;
+	env->hrtf = HrtfRequested;
+	env->doppler_scalar = Sound_doppler_level;
+	env->reverb_scalar = ReverbLevel;
 }
 
 void llsOpenAL::InitMovieBuffer(bool is16bit, int samplerate, bool stereo, llsMovieCallback callback)
@@ -731,7 +1057,7 @@ void llsOpenAL::InitMovieBuffer(bool is16bit, int samplerate, bool stereo, llsMo
 	ALErrorCheck("Creating movie source");
 	alGenBuffers(1, &MovieBufferName);
 	ALErrorCheck("Creating movie buffer");
-	InitSourceStreaming(MovieSourceName, .5);
+	InitSourceStreaming(MovieSourceName, .5, true);
 	ALErrorCheck("Setting movie source properties");
 
 	if (!is16bit)
@@ -814,6 +1140,204 @@ void llsOpenAL::QueueMovieBuffer(int length, void* data)
 
 const char* ALErrors[4] = { "Invalid enum", "Invalid name", "Invalid operation", "Invalid value" };
 
+void llsOpenAL::QueryHrtfStatus(const char* context)
+{
+	if (!Device || !HrtfSupported)
+	{
+		HrtfEnabled = false;
+		return;
+	}
+
+	ALCint status = ALC_HRTF_DISABLED_SOFT;
+	alcGetIntegerv(Device, ALC_HRTF_STATUS_SOFT, 1, &status);
+	HrtfEnabled = (status == ALC_HRTF_ENABLED_SOFT || status == ALC_HRTF_REQUIRED_SOFT ||
+		status == ALC_HRTF_HEADPHONES_DETECTED_SOFT);
+	HrtfProfileApplied = HrtfEnabled ? Sound_hrtf_profile : -1;
+	mprintf((0, "OpenAL HRTF %s: %s.", context, HrtfStatusName(status)));
+}
+
+bool llsOpenAL::ApplyHrtf(bool enabled)
+{
+	HrtfRequested = enabled;
+	if (!Initalized || !Device)
+		return false;
+
+	if (!HrtfSupported)
+	{
+		HrtfEnabled = false;
+		if (enabled)
+			mprintf((0, "OpenAL HRTF requested, but ALC_SOFT_HRTF is not present."));
+		return false;
+	}
+
+	if (!alcResetDeviceSOFT)
+	{
+		mprintf((0, "OpenAL HRTF cannot be changed because alcResetDeviceSOFT is unavailable."));
+		QueryHrtfStatus("unchanged");
+		return false;
+	}
+
+	ALCint attribs[8] = {};
+	int attrib_count = 0;
+	Sound_hrtf_profile = ClampInt(Sound_hrtf_profile, 0, std::max(0, Sound_hrtf_profile_count - 1));
+	AddContextAttribute(attribs, attrib_count, ALC_HRTF_SOFT, enabled ? ALC_TRUE : ALC_FALSE);
+	if (enabled && Sound_hrtf_profile_count > 0)
+		AddContextAttribute(attribs, attrib_count, ALC_HRTF_ID_SOFT, Sound_hrtf_profile);
+	if (EffectsSupported)
+		AddContextAttribute(attribs, attrib_count, ALC_MAX_AUXILIARY_SENDS, 1);
+
+	if (alcResetDeviceSOFT(Device, attribs) == ALC_FALSE)
+	{
+		ALCenum error = alcGetError(Device);
+		mprintf((0, "OpenAL HRTF reset failed with ALC error 0x%x.", error));
+		QueryHrtfStatus("after failed reset");
+		return false;
+	}
+
+	QueryHrtfStatus(enabled ? "enabled" : "disabled");
+	RefreshHrtfTuning();
+	return HrtfEnabled == enabled;
+}
+
+bool llsOpenAL::HrtfTuningActive() const
+{
+	return HrtfRequested && HrtfEnabled;
+}
+
+float llsOpenAL::AdjustHrtfVolume(float volume, bool is3d, bool streaming, bool music_stream) const
+{
+	if (!HrtfTuningActive() || music_stream)
+		return volume;
+
+	float scale = ClampFloat(Sound_hrtf_sfx_gain, 0.0f, 4.0f);
+	if (streaming)
+		scale *= ClampFloat(Sound_hrtf_stream_gain, 0.0f, 4.0f);
+	else if (is3d)
+		scale *= ClampFloat(Sound_hrtf_3d_gain, 0.0f, 4.0f);
+	else
+		scale *= ClampFloat(Sound_hrtf_2d_gain, 0.0f, 4.0f);
+
+	return ClampFloat(volume * scale, 0.0f, 4.0f);
+}
+
+void llsOpenAL::UpdateHrtfDirectFilter()
+{
+	if (!HrtfDirectFilter || !dalFilteri || !dalFilterf)
+		return;
+
+	dalFilteri(HrtfDirectFilter, AL_FILTER_TYPE, AL_FILTER_LOWPASS);
+	dalFilterf(HrtfDirectFilter, AL_LOWPASS_GAIN, 1.0f);
+	dalFilterf(HrtfDirectFilter, AL_LOWPASS_GAINHF, ClampFloat(Sound_hrtf_high_damping, 0.0f, 1.0f));
+	ALErrorCheck("Updating HRTF direct filter");
+}
+
+void llsOpenAL::ApplyReverbLevel()
+{
+	if (!EffectsSupported || !LastReverb || !dalAuxiliaryEffectSloti)
+		return;
+
+	if (!ReverbEnabled || ReverbLevel <= 0.0f || LastReverb->density == 0)
+	{
+		dalAuxiliaryEffectSloti(AuxEffectSlot, AL_EFFECTSLOT_EFFECT, 0);
+		ALErrorCheck("Disabling reverb level");
+		return;
+	}
+
+	dalEffectf(EffectSlot, AL_EAXREVERB_GAIN, LastReverb->gain * ReverbLevel);
+	dalEffectf(EffectSlot, AL_EAXREVERB_REFLECTIONS_GAIN, LastReverb->reflection_gain * ReverbLevel);
+	dalEffectf(EffectSlot, AL_EAXREVERB_LATE_REVERB_GAIN, LastReverb->late_reverb_gain * ReverbLevel);
+	dalAuxiliaryEffectSloti(AuxEffectSlot, AL_EFFECTSLOT_EFFECT, EffectSlot);
+	ALErrorCheck("Applying reverb level");
+}
+
+void llsOpenAL::ApplyGeneralAudioTuning()
+{
+	if (!Initalized || !SoundEntries)
+		return;
+
+	alDistanceModel(DistanceModelValue());
+	const float pitch = ClampFloat(Sound_source_pitch, 0.25f, 2.0f);
+	const float max_gain = ClampFloat(Sound_source_max_gain, 0.0f, 4.0f);
+	const float cone_angle_scale = ClampFloat(Sound_cone_angle_scale, 0.0f, 2.0f);
+	const float cone_gain_scale = ClampFloat(Sound_cone_outer_gain_scale, 0.0f, 2.0f);
+
+	for (int i = 0; i < NumSoundChannels; i++)
+	{
+		if (!SoundEntries[i].playing)
+			continue;
+
+		const ALuint handle = SoundEntries[i].handle;
+		alSourcef(handle, AL_PITCH, pitch);
+		alSourcef(handle, AL_MAX_GAIN, max_gain);
+
+		if (SoundEntries[i].is3d && SoundEntries[i].soundNum >= 0)
+		{
+			const sound_info* soundInfo = &Sounds[SoundEntries[i].soundNum];
+			if (soundInfo->flags & SPF_USE_CONE)
+			{
+				alSourcef(handle, AL_CONE_OUTER_GAIN, ClampFloat(soundInfo->outer_cone_volume * cone_gain_scale, 0.0f, 1.0f));
+				alSourcef(handle, AL_CONE_INNER_ANGLE, ClampFloat(soundInfo->inner_cone_angle * cone_angle_scale, 0.0f, 360.0f));
+				alSourcef(handle, AL_CONE_OUTER_ANGLE, ClampFloat(soundInfo->outer_cone_angle * cone_angle_scale, 0.0f, 360.0f));
+			}
+		}
+	}
+}
+
+void llsOpenAL::ApplyHrtfSourceTuning(uint32_t handle, bool is3d, bool streaming, bool music_stream, int sound_index, float volume)
+{
+	if (music_stream)
+	{
+		const bool bypass = Sound_hrtf_music_bypass > 0.5f;
+		if (DirectChannelsSupported)
+			alSourcei(handle, AL_DIRECT_CHANNELS_SOFT, bypass ? AL_TRUE : AL_FALSE);
+		if (SourceSpatializeSupported)
+			alSourcei(handle, AL_SOURCE_SPATIALIZE_SOFT, bypass ? AL_FALSE : AL_AUTO_SOFT);
+		if (HrtfDirectFilter)
+			alSourcei(handle, AL_DIRECT_FILTER, AL_FILTER_NULL);
+		alSourcef(handle, AL_GAIN, volume);
+		ALErrorCheck("Applying music stream bypass");
+		return;
+	}
+
+	if (DirectChannelsSupported)
+		alSourcei(handle, AL_DIRECT_CHANNELS_SOFT, AL_FALSE);
+	if (SourceSpatializeSupported)
+		alSourcei(handle, AL_SOURCE_SPATIALIZE_SOFT, AL_AUTO_SOFT);
+
+	if (HrtfDirectFilter)
+	{
+		UpdateHrtfDirectFilter();
+		alSourcei(handle, AL_DIRECT_FILTER, HrtfTuningActive() ? HrtfDirectFilter : AL_FILTER_NULL);
+	}
+
+	alSourcef(handle, AL_GAIN, AdjustHrtfVolume(volume, is3d, streaming, false));
+
+	if (is3d && sound_index >= 0)
+	{
+		alSourcef(handle, AL_ROLLOFF_FACTOR, ClampFloat(Sound_hrtf_rolloff_scale, 0.0f, 10.0f));
+		alSourcef(handle, AL_REFERENCE_DISTANCE, Sounds[sound_index].min_distance * ClampFloat(Sound_hrtf_reference_distance_scale, 0.01f, 10.0f));
+		alSourcef(handle, AL_MAX_DISTANCE, Sounds[sound_index].max_distance * ClampFloat(Sound_hrtf_max_distance_scale, 0.01f, 10.0f));
+	}
+
+	ALErrorCheck("Applying HRTF source tuning");
+}
+
+void llsOpenAL::RefreshHrtfTuning()
+{
+	if (!Initalized || !SoundEntries)
+		return;
+
+	UpdateHrtfDirectFilter();
+	for (int i = 0; i < NumSoundChannels; i++)
+	{
+		if (!SoundEntries[i].playing)
+			continue;
+
+		ApplyHrtfSourceTuning(SoundEntries[i].handle, SoundEntries[i].is3d, SoundEntries[i].streaming,
+			SoundEntries[i].musicStream, SoundEntries[i].soundNum, SoundEntries[i].volume);
+	}
+}
+
 bool llsOpenAL::ALErrorCheck(const char* context)
 {
 	int error;
@@ -849,50 +1373,43 @@ short llsOpenAL::FindSoundSlot(vector where, float volume, int priority)
 	int i;
 	int bestSlot = -1;
 	float bestScore = CalcScore(vm_VectorDistanceSqr(&where, &ListenerPosition), volume, priority);
+	const int channel_limit = std::min(ActiveSoundChannels, NumSoundChannels);
 	//PutLog(LogLevel::Info, "Finding a sound slot");
-	//No free slots, so bump a low priorty one.
-	if (NumSoundsPlaying >= NumSoundChannels)
+
+	for (i = 0; i < channel_limit; i++)
 	{
-		for (i = 0; i < NumSoundChannels; i++)
-		{
-			if (SoundEntries[i].streaming)
-				continue; //never bump a streaming sound, probably Bad
+		if (!SoundEntries[i].playing)
+			return i;
+	}
 
-			//check for lower priority sound
-			float score;// = ScoreDivider(SoundEntries[i].volume, SoundEntries[i].info->priority);
-			if (SoundEntries[i].is3d)
-				score = CalcScore(vm_VectorDistanceSqr(&SoundEntries[i].lastpos, &ListenerPosition), SoundEntries[i].volume, SoundEntries[i].info->priority);
-			else
-				score = CalcScore(1.0f, SoundEntries[i].volume, SoundEntries[i].info->priority);
-			
-			if (score > bestScore)
-			{
-				bestSlot = i;
-				bestScore = score;
-			}
-		}
+	//No free slots, so bump a low priorty one.
+	for (i = 0; i < channel_limit; i++)
+	{
+		if (!SoundEntries[i].playing || SoundEntries[i].streaming || !SoundEntries[i].info)
+			continue; //never bump a streaming sound, probably Bad
 
-		if (bestSlot != -1)
-		{
-			StopSound(SoundEntries[bestSlot].soundUID);
-			//PutLog(LogLevel::Warning, "Bumping sound %d due to insufficient slots.", bestSlot);
-		}
+		//check for lower priority sound
+		float score;// = ScoreDivider(SoundEntries[i].volume, SoundEntries[i].info->priority);
+		if (SoundEntries[i].is3d)
+			score = CalcScore(vm_VectorDistanceSqr(&SoundEntries[i].lastpos, &ListenerPosition), SoundEntries[i].volume, SoundEntries[i].info->priority);
 		else
-		{
-			mprintf((0, "Can't find sound slot and unable to bump sound.\n"));
-		}
+			score = CalcScore(1.0f, SoundEntries[i].volume, SoundEntries[i].info->priority);
 
+		if (score > bestScore)
+		{
+			bestSlot = i;
+			bestScore = score;
+		}
+	}
+
+	if (bestSlot != -1)
+	{
+		StopSound(SoundEntries[bestSlot].soundUID);
+		//PutLog(LogLevel::Warning, "Bumping sound %d due to insufficient slots.", bestSlot);
 		return bestSlot;
 	}
-	else //Free slots available, so find one.
-	{
-		for (i = 0; i < NumSoundChannels; i++)
-		{
-			if (!SoundEntries[i].playing)
-				return i;
-		}
-	}
-	mprintf((0, "Can't find sound slot. NumSoundsPlaying is %d.\n", NumSoundsPlaying));
+
+	mprintf((0, "Can't find sound slot and unable to bump sound.\n"));
 	return -1;
 }
 
@@ -904,9 +1421,9 @@ void llsOpenAL::InitSource2D(uint32_t handle, sound_info* soundInfo, float volum
 	alSource3f(handle, AL_DIRECTION, 0.f, 0.f, 0.f);
 	alSource3f(handle, AL_VELOCITY, 0.f, 0.f, 0.f);
 	alSource3f(handle, AL_POSITION, 0.f, 0.f, 0.f);
-	alSourcef(handle, AL_MAX_GAIN, 1.f);
-	alSourcef(handle, AL_GAIN, volume);
-	alSourcef(handle, AL_PITCH, 1.f);
+	alSourcef(handle, AL_MAX_GAIN, ClampFloat(Sound_source_max_gain, 0.0f, 4.0f));
+	alSourcef(handle, AL_GAIN, AdjustHrtfVolume(volume, false, false, false));
+	alSourcef(handle, AL_PITCH, ClampFloat(Sound_source_pitch, 0.25f, 2.0f));
 	alSourcef(handle, AL_DOPPLER_FACTOR, 0.f);
 
 	alSourcef(handle, AL_CONE_INNER_ANGLE, 360.0f);
@@ -915,7 +1432,7 @@ void llsOpenAL::InitSource2D(uint32_t handle, sound_info* soundInfo, float volum
 	alSourcei(handle, AL_LOOPING, AL_FALSE);
 }
 
-void llsOpenAL::InitSourceStreaming(uint32_t handle, float volume)
+void llsOpenAL::InitSourceStreaming(uint32_t handle, float volume, bool music_stream)
 {
 	ALErrorCheck("Clearing entry error in streaming source properties.");
 	alSourcei(handle, AL_SOURCE_RELATIVE, AL_TRUE); //should glue source to listener pos
@@ -923,9 +1440,9 @@ void llsOpenAL::InitSourceStreaming(uint32_t handle, float volume)
 	alSource3f(handle, AL_DIRECTION, 0.f, 0.f, 0.f);
 	alSource3f(handle, AL_VELOCITY, 0.f, 0.f, 0.f);
 	alSource3f(handle, AL_POSITION, 0.f, 0.f, 0.f);
-	alSourcef(handle, AL_MAX_GAIN, 1.f);
-	alSourcef(handle, AL_GAIN, volume);
-	alSourcef(handle, AL_PITCH, 1.f);
+	alSourcef(handle, AL_MAX_GAIN, ClampFloat(Sound_source_max_gain, 0.0f, 4.0f));
+	ApplyHrtfSourceTuning(handle, false, true, music_stream, -1, volume);
+	alSourcef(handle, AL_PITCH, ClampFloat(Sound_source_pitch, 0.25f, 2.0f));
 	alSourcef(handle, AL_DOPPLER_FACTOR, 0.f);
 
 	alSourcef(handle, AL_CONE_INNER_ANGLE, 360.0f);
@@ -945,24 +1462,24 @@ void llsOpenAL::InitSource3D(uint32_t handle, sound_info* soundInfo, pos_state* 
 	vector velocity = *posInfo->velocity * ListenerOrient;
 
 	alSourcei(handle, AL_SOURCE_RELATIVE, AL_TRUE);
-	alSourcef(handle, AL_ROLLOFF_FACTOR, 1.0f);
+	alSourcef(handle, AL_ROLLOFF_FACTOR, HrtfTuningActive() ? ClampFloat(Sound_hrtf_rolloff_scale, 0.0f, 10.0f) : 1.0f);
 	alSource3f(handle, AL_DIRECTION, -direction.x, direction.y, direction.z);
 	alSource3f(handle, AL_VELOCITY, -velocity.x, velocity.y, velocity.z);
 	alSource3f(handle, AL_POSITION, -position.x, position.y, position.z);
 	ALErrorCheck("Setting 3D sound source position.");
-	alSourcef(handle, AL_MAX_GAIN, 1.f);
-	alSourcef(handle, AL_GAIN, volume);
+	alSourcef(handle, AL_MAX_GAIN, ClampFloat(Sound_source_max_gain, 0.0f, 4.0f));
+	alSourcef(handle, AL_GAIN, AdjustHrtfVolume(volume, true, false, false));
 	ALErrorCheck("Setting 3D sound source volume.");
-	alSourcef(handle, AL_PITCH, 1.f);
+	alSourcef(handle, AL_PITCH, ClampFloat(Sound_source_pitch, 0.25f, 2.0f));
 	alSourcef(handle, AL_DOPPLER_FACTOR, SoundDopplerMult);
 
 	//PutLog(LogLevel::Info, "Starting 3d sound at %f %f %f", posInfo->position->x, posInfo->position->y, posInfo->position->z);
 
 	if (soundInfo->flags & SPF_USE_CONE)
 	{
-		alSourcef(handle, AL_CONE_OUTER_GAIN, soundInfo->outer_cone_volume);
-		alSourcef(handle, AL_CONE_INNER_ANGLE, soundInfo->inner_cone_angle);
-		alSourcef(handle, AL_CONE_OUTER_ANGLE, soundInfo->outer_cone_angle);
+		alSourcef(handle, AL_CONE_OUTER_GAIN, ClampFloat(soundInfo->outer_cone_volume * ClampFloat(Sound_cone_outer_gain_scale, 0.0f, 2.0f), 0.0f, 1.0f));
+		alSourcef(handle, AL_CONE_INNER_ANGLE, ClampFloat(soundInfo->inner_cone_angle * ClampFloat(Sound_cone_angle_scale, 0.0f, 2.0f), 0.0f, 360.0f));
+		alSourcef(handle, AL_CONE_OUTER_ANGLE, ClampFloat(soundInfo->outer_cone_angle * ClampFloat(Sound_cone_angle_scale, 0.0f, 2.0f), 0.0f, 360.0f));
 		ALErrorCheck("Setting 3D sound source count.");
 	}
 	else
@@ -971,8 +1488,8 @@ void llsOpenAL::InitSource3D(uint32_t handle, sound_info* soundInfo, pos_state* 
 		alSourcef(handle, AL_CONE_OUTER_ANGLE, 360.0f);
 	}
 
-	alSourcef(handle, AL_REFERENCE_DISTANCE, soundInfo->min_distance);
-	alSourcef(handle, AL_MAX_DISTANCE, soundInfo->max_distance);
+	alSourcef(handle, AL_REFERENCE_DISTANCE, soundInfo->min_distance * (HrtfTuningActive() ? ClampFloat(Sound_hrtf_reference_distance_scale, 0.01f, 10.0f) : 1.0f));
+	alSourcef(handle, AL_MAX_DISTANCE, soundInfo->max_distance * (HrtfTuningActive() ? ClampFloat(Sound_hrtf_max_distance_scale, 0.01f, 10.0f) : 1.0f));
 	ALErrorCheck("Setting 3D sound source distance.");
 
 	alSourcei(handle, AL_LOOPING, AL_FALSE);
@@ -995,7 +1512,25 @@ void llsOpenAL::BindBufferData(uint32_t handle, int sound_index, bool looped)
 		mprintf((0, "Tried to start sound %s but got nullptr.", SoundFiles[Sounds[sound_index].sample_index].name));
 		return;
 	}
-	alBufferData(handle, fmt, ptr, len, 22050);
+	if (HrtfTuningActive() && HrtfSampleEqActive())
+	{
+		if (Quality == SQT_HIGH)
+		{
+			std::vector<short> processed;
+			ProcessHrtfSamples16((const short*)ptr, SoundFiles[Sounds[sound_index].sample_index].np_sample_length, processed);
+			alBufferData(handle, fmt, processed.data(), (ALsizei)(processed.size() * sizeof(short)), 22050);
+		}
+		else
+		{
+			std::vector<unsigned char> processed;
+			ProcessHrtfSamples8((const unsigned char*)ptr, SoundFiles[Sounds[sound_index].sample_index].np_sample_length, processed);
+			alBufferData(handle, fmt, processed.data(), (ALsizei)processed.size(), 22050);
+		}
+	}
+	else
+	{
+		alBufferData(handle, fmt, ptr, len, 22050);
+	}
 
 	SoundFiles[Sounds[sound_index].sample_index].use_count++;
 	ALErrorCheck("Binding buffer data");
@@ -1026,7 +1561,8 @@ void llsOpenAL::BindBufferData(uint32_t handle, int sound_index, bool looped)
 void llsOpenAL::SoundCleanup(int soundID)
 {
 	SoundEntries[soundID].playing = false;
-	SoundFiles[Sounds[SoundEntries[soundID].soundNum].sample_index].use_count--;
+	if (SoundEntries[soundID].soundNum >= 0)
+		SoundFiles[Sounds[SoundEntries[soundID].soundNum].sample_index].use_count--;
 	//PutLog(LogLevel::Info, "Sound %d (%s) has been stopped", SoundEntries[i].soundUID, pSoundFiles[pSounds[SoundEntries[i].soundNum].sample_index].name);
 	if (NumSoundsPlaying > 0)
 		NumSoundsPlaying--;

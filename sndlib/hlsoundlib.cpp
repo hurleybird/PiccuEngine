@@ -46,6 +46,35 @@ char Sound_quality = SQT_NORMAL;
 char Sound_mixer = SOUND_MIXER_SOFTWARE_16;
 bool Sound_reverb = true;
 bool Sound_doppler = true;
+float Sound_reverb_level = 0.5f;
+float Sound_doppler_level = 0.5f;
+bool Sound_hrtf = false;
+float Sound_hrtf_sfx_gain = 1.0f;
+float Sound_hrtf_2d_gain = 1.0f;
+float Sound_hrtf_3d_gain = 1.0f;
+float Sound_hrtf_stream_gain = 1.0f;
+float Sound_hrtf_bass_gain = 3.0f;
+float Sound_hrtf_bass_cutoff = 200.0f;
+float Sound_hrtf_treble_gain = 1.5f;
+float Sound_hrtf_treble_cutoff = 7000.0f;
+float Sound_hrtf_eq_mix = 0.75f;
+float Sound_hrtf_high_damping = 1.0f;
+float Sound_hrtf_rolloff_scale = 1.0f;
+float Sound_hrtf_reference_distance_scale = 1.0f;
+float Sound_hrtf_max_distance_scale = 1.0f;
+float Sound_hrtf_doppler_scale = 1.0f;
+int Sound_hrtf_profile = 0;
+int Sound_hrtf_profile_count = 0;
+int Sound_hrtf_distance_model = 0;
+float Sound_doppler_base = 0.5f;
+float Sound_source_pitch = 1.0f;
+float Sound_source_max_gain = 1.5f;
+float Sound_cone_angle_scale = 1.0f;
+float Sound_cone_outer_gain_scale = 1.0f;
+float Sound_reverb_decay_scale = 1.0f;
+float Sound_reverb_hf_gain_scale = 1.0f;
+float Sound_reverb_lf_gain_scale = 1.0f;
+float Sound_hrtf_music_bypass = 1.0f;
 
 char Sound_card_name[256] = "";
 
@@ -129,7 +158,7 @@ void hlsSystem::SetLLSoundQuantity(int n_sounds)
 
 	n_lls_sounds = n_sounds;
 	mprintf((1, "SNDLIB: Allow %d sounds to be mixed.\n", n_sounds));
-	if (m_f_hls_system_init)
+	if (m_f_hls_system_init && m_ll_sound_ptr && !m_ll_sound_ptr->SetSoundQuantity(n_sounds))
 		InitSoundLib(NULL, Sound_mixer, Sound_quality, false);
 
 }
@@ -185,7 +214,7 @@ int hlsSystem::InitSoundLib(oeApplication* sos, char mixer_type, char quality, b
 	return status;
 }
 
-void hlsSystem::UpdateEnvironmentToggles()
+void hlsSystem::UpdateEnvironmentToggles(int flags)
 {
 	if (!m_ll_sound_ptr)
 		return;
@@ -193,8 +222,12 @@ void hlsSystem::UpdateEnvironmentToggles()
 	t3dEnvironmentToggles env = {};
 	m_ll_sound_ptr->GetEnvironmentToggles(&env);
 
-	env.doppler = Sound_doppler;
-	env.reverb = Sound_reverb;
+	env.flags |= flags;
+	env.doppler = Sound_doppler && Sound_doppler_level > 0.0f;
+	env.reverb = Sound_reverb && Sound_reverb_level > 0.0f;
+	env.doppler_scalar = Sound_doppler_level;
+	env.reverb_scalar = Sound_reverb_level;
+	env.hrtf = Sound_hrtf;
 	m_ll_sound_ptr->SetEnvironmentToggles(&env);
 }
 
@@ -540,15 +573,9 @@ bool hlsSystem::ComputePlayInfo(int sound_obj_index, vector* virtual_pos, vector
 	m_sound_objects[sound_obj_index].play_info.sample_skip_interval = 0;
 	vector dir_to_sound;
 	float dist;
-	if (m_master_volume <= 0.0)
-		return false;
-
 	*adjusted_volume = (m_master_volume * m_sound_objects[sound_obj_index].volume_3d);
 	if (*adjusted_volume <= 0.0)
-	{
 		*adjusted_volume = 0.0;
-		return false;
-	}
 
 	int sound_index = m_sound_objects[sound_obj_index].m_sound_index;
 	ASSERT(sound_index >= 0 && sound_index < MAX_SOUNDS);
@@ -684,11 +711,6 @@ bool hlsSystem::ComputePlayInfo(int sound_obj_index, vector* virtual_pos, vector
 	if (dist >= Sounds[sound_index].max_distance)
 		return false;
 
-	if (*adjusted_volume <= 0.0)
-	{
-		*adjusted_volume = 0.0;
-		return false;
-	}
 	if (dist == 0.0f)
 	{
 		dir_to_sound = Viewer_object->orient.fvec;
@@ -950,6 +972,7 @@ int hlsSystem::Play2dSound(int sound_index, int priority, float volume, float pa
 	//	else 
 	//		mprintf((0, "5.75k\n"));
 	m_sound_objects[i].m_sound_index = sound_index;
+	m_sound_objects[i].volume_3d = volume;
 	m_sound_objects[i].m_sound_uid = m_ll_sound_ptr->PlaySound2d(&m_sound_objects[i].play_info, sound_index,
 		volume * m_master_volume, pan, (Sounds[sound_index].flags & SPF_LOOPED));
 	//ASSERT(m_sound_objects[i].m_sound_uid != -1);
@@ -1002,6 +1025,7 @@ int hlsSystem::PlayStream(int unique_handle, void* data, int size, int stream_fo
 	m_sound_objects[i].play_info.m_stream_bufsize = size;
 	m_sound_objects[i].m_hlsound_uid = MakeUniqueId(i);
 	m_sound_objects[i].m_sound_index = -1;
+	m_sound_objects[i].volume_3d = volume;
 
 	m_sound_objects[i].m_sound_uid = m_ll_sound_ptr->PlayStream(&m_sound_objects[i].play_info);
 	//ASSERT(m_sound_objects[i].m_sound_uid != -1);
@@ -1123,18 +1147,24 @@ void hlsSystem::SetMasterVolume(float volume)
 	extern void StreamVolume(float master_volume);
 	ASSERT(volume >= 0.0 && volume <= 1.0);
 
-	if (volume == 0)
-	{
-		StopAllSounds();
-		KillSoundLib(true);
-		m_master_volume = 0;
-	}
-	else
-	{
-		if (m_master_volume == 0)
-			InitSoundLib(Descent, Sound_mixer, Sound_quality, false);
-	}
+	if (m_master_volume == 0 && volume > 0 && !m_f_hls_system_init)
+		InitSoundLib(Descent, Sound_mixer, Sound_quality, false);
+
 	m_master_volume = volume;
+
+	if (m_f_hls_system_init && m_ll_sound_ptr)
+	{
+		for (int i = 0; i < MAX_SOUND_OBJECTS; i++)
+		{
+			if ((m_sound_objects[i].m_obj_type_flags & SIF_PLAYING_2D) &&
+				!(m_sound_objects[i].m_obj_type_flags & SIF_STREAMING_MUSIC))
+			{
+				m_ll_sound_ptr->AdjustSound(m_sound_objects[i].m_sound_uid,
+					m_sound_objects[i].volume_3d * m_master_volume,
+					0.0f, 22050);
+			}
+		}
+	}
 
 	StreamVolume(m_master_volume);
 }

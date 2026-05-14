@@ -263,7 +263,7 @@ void oms_stream::processQLoad(const char *fname)
 {
 	m_stream.Close();
 
-	if (m_stream.Open(fname)) {
+	if (m_stream.Open(fname, STRM_OPNF_MUSIC)) {
 		STREAM_COMMANDP(OMS_STRM_LOAD, (void *)fname);
 		m_data.p = (void *)fname;
 	}

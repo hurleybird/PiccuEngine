@@ -1417,8 +1417,33 @@ struct sound_menu
 
 	short old_fxquantity;
 
-	bool* doppler;
-	bool* reverbs;
+	short* doppler_level;
+	short* reverb_level;
+	bool* hrtf;
+
+	short* add_float_slider(newuiSheet* target_sheet, const char* title, float value, float min_value, float max_value)
+	{
+		tSliderSettings slider_set;
+		slider_set.type = SLIDER_UNITS_FLOAT;
+		slider_set.min_val.f = min_value;
+		slider_set.max_val.f = max_value;
+		return target_sheet->AddSlider(title, 100, CALC_SLIDER_POS_FLOAT(value, &slider_set, 100), &slider_set);
+	}
+
+	float slider_float_value(short* slider, float min_value, float max_value)
+	{
+		return CALC_SLIDER_FLOAT_VALUE(*slider, min_value, max_value, 100);
+	}
+
+	void apply_effect_levels(int flags)
+	{
+		Sound_doppler_level = slider_float_value(doppler_level, 0.0f, 1.0f);
+		Sound_reverb_level = slider_float_value(reverb_level, 0.0f, 1.0f);
+		Sound_doppler = Sound_doppler_level > 0.0f;
+		Sound_reverb = Sound_reverb_level > 0.0f;
+		Sound_hrtf = *hrtf;
+		Sound_system.UpdateEnvironmentToggles(flags);
+	}
 
 	// sets the menu up.
 	newuiSheet* setup(newuiMenu* menu)
@@ -1440,31 +1465,35 @@ struct sound_menu
 		slider_set.type = SLIDER_UNITS_PERCENT;
 		musicvolume = sheet->AddSlider(TXT_SNDMUSVOL, 10, (short)(D3MusicGetVolume() * 10), &slider_set);
 
+		slider_set.min_val.i = MIN_SOUNDS_MIXED;
+		slider_set.max_val.i = MAX_SOUNDS_MIXED;
+		slider_set.type = SLIDER_UNITS_INT;
+		fxquantity = sheet->AddSlider(TXT_SNDCFG_SFXQUANTITY, (slider_set.max_val.i - slider_set.min_val.i),
+			Sound_system.GetLLSoundQuantity() - MIN_SOUNDS_MIXED, &slider_set);
+		old_fxquantity = (Sound_system.GetLLSoundQuantity() - MIN_SOUNDS_MIXED);
+
+		tSliderSettings effect_slider_set;
+		effect_slider_set.type = SLIDER_UNITS_FLOAT;
+		effect_slider_set.min_val.f = 0.0f;
+		effect_slider_set.max_val.f = 1.0f;
+		sheet->NewGroup(NULL, 0, 152);
+		hrtf = sheet->AddLongCheckBox("Headphone HRTF", Sound_hrtf);
+		doppler_level = sheet->AddSlider("Doppler", 100, CALC_SLIDER_POS_FLOAT(Sound_doppler_level, &effect_slider_set, 100), &effect_slider_set);
+		reverb_level = sheet->AddSlider("Reverb", 100, CALC_SLIDER_POS_FLOAT(Sound_reverb_level, &effect_slider_set, 100), &effect_slider_set);
+
 		// sound fx quality radio list.
 		if (GetFunctionMode() != GAME_MODE && GetFunctionMode() != EDITOR_GAME_MODE)
 		{
-			sheet->NewGroup(TXT_SNDQUALITY, 0, 95);
+			sheet->NewGroup("Quality", 184, 0);
 
 			fxquality = sheet->AddFirstRadioButton(TXT_SNDNORMAL);
 			sheet->AddRadioButton(TXT_SNDHIGH);
 			*fxquality = Sound_system.GetSoundQuality() == SQT_HIGH ? 1 : 0;
-
-			slider_set.min_val.i = MIN_SOUNDS_MIXED;
-			slider_set.max_val.i = MAX_SOUNDS_MIXED;
-			slider_set.type = SLIDER_UNITS_INT;
-			fxquantity = sheet->AddSlider(TXT_SNDCFG_SFXQUANTITY, (slider_set.max_val.i - slider_set.min_val.i),
-				Sound_system.GetLLSoundQuantity() - MIN_SOUNDS_MIXED, &slider_set);
-			old_fxquantity = (Sound_system.GetLLSoundQuantity() - MIN_SOUNDS_MIXED);
 		}
 		else
 		{
 			fxquality = NULL;
-			fxquantity = NULL;
 		}
-
-		sheet->NewGroup("Effects", 0, 176);
-		doppler = sheet->AddLongCheckBox("Doppler", Sound_doppler);
-		reverbs = sheet->AddLongCheckBox("Reverbs", Sound_reverb);
 
 		return sheet;
 	};
@@ -1489,18 +1518,16 @@ struct sound_menu
 			Sound_system.SetSoundQuality((*fxquality == 1) ? SQT_HIGH : SQT_NORMAL);
 		}
 
-		if (doppler && reverbs)
+		if (doppler_level && reverb_level && hrtf)
 		{
-			Sound_doppler = *doppler;
-			Sound_reverb = *reverbs;
-			Sound_system.UpdateEnvironmentToggles();
+			apply_effect_levels(ENV3DVALF_DOPPLER | ENV3dVALF_REVERBS | ENV3DVALF_HRTF);
 		}
 	};
 
 	// process output and do stuff accordintly
 	void process(int res)
 	{
-		if (sheet->HasChanged(fxvolume))
+		if (parent_menu->GetCurrentOption() == IDV_SCONFIG && sheet->HasChanged(fxvolume))
 		{
 			Sound_system.SetMasterVolume((*fxvolume) / 10.0f);
 			Sound_system.BeginSoundFrame(false);
@@ -1508,9 +1535,30 @@ struct sound_menu
 			ls_sound_id = Sound_system.Play2dSound(sound_id);
 			Sound_system.EndSoundFrame();
 		}
-		if (sheet->HasChanged(musicvolume))
+		if (parent_menu->GetCurrentOption() == IDV_SCONFIG && sheet->HasChanged(musicvolume))
 		{
 			D3MusicSetVolume((*musicvolume) / 10.0f);
+		}
+		if (parent_menu->GetCurrentOption() == IDV_SCONFIG && fxquantity && sheet->HasChanged(fxquantity))
+		{
+			Sound_system.SetLLSoundQuantity((*fxquantity) + MIN_SOUNDS_MIXED);
+			old_fxquantity = *fxquantity;
+		}
+		if (parent_menu->GetCurrentOption() == IDV_SCONFIG && fxquality && sheet->HasChanged(fxquality))
+		{
+			Sound_system.SetSoundQuality((*fxquality == 1) ? SQT_HIGH : SQT_NORMAL);
+		}
+		if (parent_menu->GetCurrentOption() == IDV_SCONFIG)
+		{
+			int effect_flags = 0;
+			if (sheet->HasChanged(doppler_level))
+				effect_flags |= ENV3DVALF_DOPPLER;
+			if (sheet->HasChanged(reverb_level))
+				effect_flags |= ENV3dVALF_REVERBS;
+			if (sheet->HasChanged(hrtf))
+				effect_flags |= ENV3DVALF_HRTF;
+			if (effect_flags)
+				apply_effect_levels(effect_flags);
 		}
 	};
 };

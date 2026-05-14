@@ -24,7 +24,7 @@
 
 //////////////////////////////////////////////////////////////////////////
 
-#define MAX_SOUNDS_MIXED 40
+#define MAX_SOUNDS_MIXED 128
 #define MIN_SOUNDS_MIXED 20
 #define MAX_SOUND_OBJECTS 3000
 
@@ -32,6 +32,35 @@ extern char Sound_quality;
 extern char Sound_mixer;
 extern bool Sound_doppler;
 extern bool Sound_reverb;
+extern float Sound_doppler_level;
+extern float Sound_reverb_level;
+extern bool Sound_hrtf;
+extern float Sound_hrtf_sfx_gain;
+extern float Sound_hrtf_2d_gain;
+extern float Sound_hrtf_3d_gain;
+extern float Sound_hrtf_stream_gain;
+extern float Sound_hrtf_bass_gain;
+extern float Sound_hrtf_bass_cutoff;
+extern float Sound_hrtf_treble_gain;
+extern float Sound_hrtf_treble_cutoff;
+extern float Sound_hrtf_eq_mix;
+extern float Sound_hrtf_high_damping;
+extern float Sound_hrtf_rolloff_scale;
+extern float Sound_hrtf_reference_distance_scale;
+extern float Sound_hrtf_max_distance_scale;
+extern float Sound_hrtf_doppler_scale;
+extern int Sound_hrtf_profile;
+extern int Sound_hrtf_profile_count;
+extern int Sound_hrtf_distance_model;
+extern float Sound_doppler_base;
+extern float Sound_source_pitch;
+extern float Sound_source_max_gain;
+extern float Sound_cone_angle_scale;
+extern float Sound_cone_outer_gain_scale;
+extern float Sound_reverb_decay_scale;
+extern float Sound_reverb_hf_gain_scale;
+extern float Sound_reverb_lf_gain_scale;
+extern float Sound_hrtf_music_bypass;
 extern char Sound_card_name[];
 
 class sound_object 
@@ -99,7 +128,7 @@ public:
 
 	// Start and clean-up after the sound library
 	int InitSoundLib(oeApplication *sos, char mixer_type, char quality, bool f_kill_sound_lib = false);
-	void UpdateEnvironmentToggles();
+	void UpdateEnvironmentToggles(int flags = ENV3DVALF_DOPPLER | ENV3dVALF_REVERBS | ENV3DVALF_HRTF);
 	void KillSoundLib(bool f_kill_sound_list);
 	void SetLLSoundQuantity(int n_sounds);
 	int GetLLSoundQuantity();

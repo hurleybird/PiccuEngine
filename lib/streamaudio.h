@@ -109,6 +109,7 @@ public:
 //	flags used to open stream.
 #define STRM_OPNF_ONETIME	0x1
 #define STRM_OPNF_GRADUAL	0x2
+#define STRM_OPNF_MUSIC		0x4
 
 /*	This class will handle streams for the music system.
 	Including allowing an interface to dynamically change the stream.

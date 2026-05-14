@@ -184,6 +184,7 @@ struct sound_info
 #define SIF_STREAMING_8_S		256
 #define SIF_STREAMING_16_S		512
 #define SIF_STREAMING			(64 | 128 | 256 | 512)
+#define SIF_STREAMING_MUSIC		1024
 
 // What is the sound cone linked to (and mask to make it else to look at the important bits)
 #define SPFT_CONE_LINK_MASK		0x00000300
@@ -211,6 +212,7 @@ struct sound_info
 #define ENV3DVALF_DOPPLER		1
 #define ENV3DVALF_GEOMETRY		2
 #define ENV3dVALF_REVERBS		4
+#define ENV3DVALF_HRTF			8
 
 struct t3dEnvironmentValues
 {
@@ -227,6 +229,9 @@ struct t3dEnvironmentToggles
 	bool doppler;							// state of doppler effects
 	bool reverb;							// state of reverb effects
 	bool geometry;							// support hardware geometry
+	bool hrtf;								// state of headphone HRTF spatialization
+	float doppler_scalar;					// doppler strength, 0 is off, 1 is normal
+	float reverb_scalar;						// reverb strength, 0 is off, 1 is normal
 };
 
 typedef int (*llsMovieCallback)(void* userptr, void* sampledata, int numbytes);
@@ -270,6 +275,7 @@ public:
 
 	virtual bool SetSoundQuality(char quality) = 0;
 	virtual char GetSoundQuality(void) = 0;
+	virtual bool SetSoundQuantity(int max_sounds_played) { return false; };
 	virtual bool SetSoundMixer(char mixer_type) = 0;
 	virtual char GetSoundMixer(void) = 0;
 

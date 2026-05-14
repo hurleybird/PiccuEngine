@@ -493,6 +493,8 @@ bool AudioStream::Play(bool start_on_frame)
 	case SAF_16BIT_S:	sflag = SIF_STREAMING_16_S; break;
 	default: Int3(); return false;
 	}
+	if (m_flags & STRM_OPNF_MUSIC)
+		sflag |= SIF_STREAMING_MUSIC;
 // reset soft stopping.
 	m_stopnextmeasure = false;
 	m_curmeasure = 0;

@@ -53,6 +53,7 @@
 #include "ctlconfig.h"
 #include "d3music.h"
 #include "gameloop.h"
+#include "renderer.h"
 
 #if defined(SDL3)
 #include <SDL3/SDL_video.h>
@@ -1207,6 +1208,19 @@ struct video_menu
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		*hbao = ConfigCanUseHBAO() ?
 			HBAOPresetToIndex(Render_preferred_state.hbao_enabled, Render_preferred_state.hbao_resolution) : 0;
+
+		sheet->NewGroup(NULL, 0, 252);
+		if (OpenGLProfile == GLPROFILE_CORE)
+		{
+			sheet->AddText("OpenGL core requested 4.3, got %d.%d (%s)",
+				RendererOpenGLMajorVersion,
+				RendererOpenGLMinorVersion,
+				RendererOpenGLVersionString[0] ? RendererOpenGLVersionString : "unknown");
+		}
+		else
+		{
+			sheet->AddText("OpenGL compatibility profile active");
+		}
 
 		return sheet;
 	};

@@ -61,6 +61,9 @@ enum opengl_profile
 //TODO: Need to excise the legacy renderer selector from the code entirely. 
 extern renderer_type Renderer_type;
 extern opengl_profile OpenGLProfile;
+extern int RendererOpenGLMajorVersion;
+extern int RendererOpenGLMinorVersion;
+extern char RendererOpenGLVersionString[128];
 
 // renderer clear flags
 #define RF_CLEAR_ZBUFFER	1

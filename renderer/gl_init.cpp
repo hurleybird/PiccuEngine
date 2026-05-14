@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 #include "args.h"
+#include <stdio.h>
 
 #ifdef SDL3
 #include <SDL3/SDL_video.h>
@@ -39,6 +40,9 @@ HGLRC ResourceContext;
 #endif
 
 bool Already_loaded = false;
+
+constexpr int GL_CORE_MAJOR_VERSION = 4;
+constexpr int GL_CORE_MINOR_VERSION = 3;
 
 // Sets default states for our renderer
 void GL3Renderer::SetDefaults()
@@ -125,8 +129,8 @@ int GL3Renderer::Setup(SDL_Window* window)
 
 	//These are supposed to be before creating a window, but atm they're here. This seems to work on Windows at least.
 	//Need more time to figure out how compatibile this is.. or just make the decision before the first window is initialized.
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, GL_CORE_MAJOR_VERSION);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, GL_CORE_MINOR_VERSION);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 	SDL_GLContext context = SDL_GL_CreateContext(window);
 	if (context == nullptr)
@@ -143,6 +147,11 @@ int GL3Renderer::Setup(SDL_Window* window)
 			Int3();
 			return 0;
 		}
+	}
+	if (!GLAD_GL_VERSION_4_3)
+	{
+		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.3.\n");
+		return 0;
 	}
 
 	return 1;
@@ -390,8 +399,8 @@ int GL3Renderer::Setup(HDC glhdc)
 
 	GLint attribs[] =
 	{
-		WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-		WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+		WGL_CONTEXT_MAJOR_VERSION_ARB, GL_CORE_MAJOR_VERSION,
+		WGL_CONTEXT_MINOR_VERSION_ARB, GL_CORE_MINOR_VERSION,
 		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
 #if defined(GL_DEBUG) && !defined(NDEBUG)
 		WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
@@ -431,6 +440,11 @@ int GL3Renderer::Setup(HDC glhdc)
 			return 0;
 		}
 	}
+	if (!GLAD_GL_VERSION_4_3)
+	{
+		rend_SetErrorMessage("OpenGL implementation does not expose OpenGL 4.3.\n");
+		return 0;
+	}
 
 	dwglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)opengl_GLADLoad("wglSwapIntervalEXT");
 
@@ -444,9 +458,19 @@ int GL3Renderer::Setup(HDC glhdc)
 // Gets some specific information about this particular flavor of opengl
 void GL3Renderer::GetInformation()
 {
+	const char* version = (const char*)glGetString(GL_VERSION);
+	glGetIntegerv(GL_MAJOR_VERSION, &RendererOpenGLMajorVersion);
+	glGetIntegerv(GL_MINOR_VERSION, &RendererOpenGLMinorVersion);
+	if (version != nullptr)
+		snprintf(RendererOpenGLVersionString, sizeof(RendererOpenGLVersionString), "%s", version);
+	else
+		RendererOpenGLVersionString[0] = '\0';
+
 	mprintf((0, "OpenGL Vendor: %s\n", glGetString(GL_VENDOR)));
 	mprintf((0, "OpenGL Renderer: %s\n", glGetString(GL_RENDERER)));
-	mprintf((0, "OpenGL Version: %s\n", glGetString(GL_VERSION)));
+	mprintf((0, "OpenGL Version: %s\n", version ? version : "unknown"));
+	mprintf((0, "PiccuEngine GL core path requested 4.3, got %d.%d (%s)\n",
+		RendererOpenGLMajorVersion, RendererOpenGLMinorVersion, RendererOpenGLVersionString));
 }
 
 #if defined(WIN32) && !defined(SDL3)
@@ -528,7 +552,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	}
 
 #if defined(GL_DEBUG) && !defined(NDEBUG)
-	OpenGL_debugging_enabled = CheckExtension("GL_KHR_debug");
+	OpenGL_debugging_enabled = GLAD_GL_VERSION_4_3 || CheckExtension("GL_KHR_debug");
 	if (OpenGL_debugging_enabled)
 	{
 		glDebugMessageCallback(GL_LogDebugMsg, nullptr);
@@ -576,7 +600,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	framebuffer_ok = false;
 	if (glGenFramebuffers == nullptr)
 	{
-		Error("OpenGL implementation does not appear to expose OpenGL 3.3.");
+		Error("OpenGL implementation does not appear to expose OpenGL 4.3.");
 		return 0;
 	}
 	framebuffer_ok = true;

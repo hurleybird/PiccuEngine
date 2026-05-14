@@ -555,7 +555,7 @@ void ShaderProgram::AttachSourcePreprocess(const char* vertexsource, const char*
 	const char* fragstrs[3];
 	GLint fraglens[3];
 
-	vertexstrs[0] = fragstrs[0] = "#version 330 core\n";
+	vertexstrs[0] = fragstrs[0] = "#version 430 core\n";
 	vertexlens[0] = fraglens[0] = strlen(vertexstrs[0]);
 
 	std::string preprocessorstr;

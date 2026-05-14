@@ -17,7 +17,7 @@
 */
 
 const char* blitVertexSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "layout(location = 0) in vec2 position;\n"
 "layout(location = 1) in vec2 uv;\n"
@@ -32,7 +32,7 @@ const char* blitVertexSrc =
 "";
 
 const char* blitFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "\n"
@@ -49,7 +49,7 @@ const char* blitFragmentSrc =
 "";
 
 const char* motionVectorVertexSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "layout(location = 0) in vec3 position;\n"
 "layout(location = 1) in vec2 velocity_pixels;\n"
@@ -67,7 +67,7 @@ const char* motionVectorVertexSrc =
 "";
 
 const char* motionVectorFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 out_velocity;\n"
 "layout(location = 0) out vec2 velocity;\n"
@@ -79,7 +79,7 @@ const char* motionVectorFragmentSrc =
 "";
 
 const char* downsampleFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "out vec4 color;\n"
 "\n"
@@ -127,7 +127,7 @@ const char* downsampleFragmentSrc =
 "";
 
 const char* bloomThresholdFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 color;\n"
@@ -186,7 +186,7 @@ const char* bloomThresholdFragmentSrc =
 "";
 
 const char* bloomDownsampleFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 color;\n"
@@ -224,7 +224,7 @@ const char* bloomDownsampleFragmentSrc =
 "";
 
 const char* bloomMergeFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 color;\n"
@@ -257,7 +257,7 @@ const char* bloomMergeFragmentSrc =
 "";
 
 const char* bloomCompositeFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 color;\n"
@@ -279,7 +279,7 @@ const char* bloomCompositeFragmentSrc =
 "";
 
 const char* hbaoDeferredCompositeFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 color;\n"
@@ -299,7 +299,7 @@ const char* hbaoDeferredCompositeFragmentSrc =
 "";
 
 const char* testVertexSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "layout(std140) uniform CommonBlock\n"
 "{\n"
@@ -324,7 +324,7 @@ const char* testVertexSrc =
 "";
 
 const char* testFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "uniform sampler2D colortexture;\n"
 "uniform sampler2D lightmaptexture;\n"
@@ -361,7 +361,7 @@ const char* testFragmentSrc =
 //-----------------------------------------------------------------------------
 
 const char* hbaoDepthFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "layout(location = 0) out vec4 result;\n"
@@ -410,7 +410,7 @@ const char* hbaoDepthFragmentSrc =
 "";
 
 const char* hbaoAOFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "layout(location = 0) out vec4 ao_out;\n"
@@ -547,7 +547,7 @@ const char* hbaoAOFragmentSrc =
 "";
 
 const char* hbaoBlurFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 result;\n"
@@ -591,7 +591,7 @@ const char* hbaoBlurFragmentSrc =
 "";
 
 const char* hbaoTemporalFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 result;\n"
@@ -728,7 +728,7 @@ const char* hbaoTemporalFragmentSrc =
 "";
 
 const char* hbaoSuppressionFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 result;\n"
@@ -854,7 +854,7 @@ const char* hbaoSuppressionFragmentSrc =
 //Apply pass: multiplies destination color by the AO factor.
 //Uses (GL_DST_COLOR, GL_ZERO) blend, so the output color is the AO multiplier.
 const char* hbaoApplyFragmentSrc =
-"#version 330 core\n"
+"#version 430 core\n"
 "\n"
 "in vec2 outuv;\n"
 "out vec4 result;\n"

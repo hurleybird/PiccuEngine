@@ -27,6 +27,9 @@
 renderer_type Renderer_type = RENDERER_OPENGL;
 
 opengl_profile OpenGLProfile = GLPROFILE_CORE;
+int RendererOpenGLMajorVersion = 0;
+int RendererOpenGLMinorVersion = 0;
+char RendererOpenGLVersionString[128] = "";
 static IRenderer* renderer_inst;
 
 bool Renderer_initted;

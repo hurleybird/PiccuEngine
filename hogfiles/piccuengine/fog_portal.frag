@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 
 uniform sampler2D colortexture;
 uniform sampler2D lightmaptexture;

@@ -802,7 +802,7 @@ void LoadGameSettings()
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	if (FindArg("-glcompat") || FindArg("-gl1") || FindArg("-openglcompat"))
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
-	if (FindArg("-glcore") || FindArg("-gl3") || FindArg("-openglcore"))
+	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl43") || FindArg("-gl3") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{

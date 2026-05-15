@@ -158,22 +158,15 @@ static uint32_t Terrain_lightmap_fog_handle = 0xFFFFFFFFu;
 
 extern vector Clip_plane_point;
 
-struct TerrainGpuVertexInput
+struct TerrainGpuCellInput
 {
-	float x;
-	float y;
-	float z;
-	float u1;
-	float v1;
-	float u2;
-	float v2;
-	float pad;
+	uint32_t packed[4];
+	float height[4];
 };
 
-struct TerrainGpuTriangleInput
-{
-	TerrainGpuVertexInput v[3];
-};
+static_assert(sizeof(TerrainGpuCellInput) == 32, "TerrainGpuCellInput must match GLSL std430 array stride");
+static_assert(offsetof(TerrainGpuCellInput, packed) == 0, "TerrainGpuCellInput packed offset must match GLSL");
+static_assert(offsetof(TerrainGpuCellInput, height) == 16, "TerrainGpuCellInput height offset must match GLSL");
 
 struct TerrainGpuVertexOutput
 {
@@ -199,9 +192,9 @@ static_assert(offsetof(TerrainGpuVertexOutput, u1) == 32, "TerrainGpuVertexOutpu
 static_assert(offsetof(TerrainGpuVertexOutput, u2) == 40, "TerrainGpuVertexOutput uv2 offset must match GLSL");
 static_assert(offsetof(TerrainGpuVertexOutput, uslide) == 48, "TerrainGpuVertexOutput uvslide offset must match GLSL");
 
-struct TerrainGpuTriangleWork
+struct TerrainGpuCellWork
 {
-	TerrainGpuTriangleInput input;
+	TerrainGpuCellInput input;
 	int texture;
 	int lightmap;
 };
@@ -214,20 +207,11 @@ struct TerrainGpuBatch
 	int vertex_count;
 };
 
-struct TerrainGpuPolyPoint
-{
-	int seg;
-	float u1;
-	float v1;
-	float u2;
-	float v2;
-};
-
 static GLuint Terrain_compute_program = 0;
 static GLuint Terrain_compute_input_buffer = 0;
 static GLuint Terrain_compute_vertex_buffer = 0;
 static GLuint Terrain_compute_vertex_array = 0;
-static GLint Terrain_compute_triangle_count_uniform = -1;
+static GLint Terrain_compute_cell_count_uniform = -1;
 static GLint Terrain_compute_row0_uniform = -1;
 static GLint Terrain_compute_xstep_uniform = -1;
 static GLint Terrain_compute_zstep_uniform = -1;
@@ -235,8 +219,8 @@ static GLint Terrain_compute_ystep_uniform = -1;
 static bool Terrain_compute_ready = false;
 static bool Terrain_compute_unavailable = false;
 static size_t Terrain_compute_vertex_capacity = 0;
-static std::vector<TerrainGpuTriangleWork> Terrain_compute_work;
-static std::vector<TerrainGpuTriangleInput> Terrain_compute_inputs;
+static std::vector<TerrainGpuCellWork> Terrain_compute_cell_work;
+static std::vector<TerrainGpuCellInput> Terrain_compute_cell_inputs;
 static std::vector<TerrainGpuBatch> Terrain_compute_batches;
 
 static void SetTerrainComputeStatus(const char* status)
@@ -270,7 +254,7 @@ static void SetTerrainComputeStatusFromLog(const char* status, const char* log)
 static void SetTerrainComputeStatusActive(int cellcount)
 {
 	snprintf(Terrain_compute_status_text, sizeof(Terrain_compute_status_text),
-		"Compute: ACTIVE %dc %zut %zub", cellcount, Terrain_compute_inputs.size(), Terrain_compute_batches.size());
+		"Compute: ACTIVE %dc %zut %zub", cellcount, Terrain_compute_cell_inputs.size() * 2, Terrain_compute_batches.size());
 	Terrain_compute_status_text[sizeof(Terrain_compute_status_text) - 1] = '\0';
 }
 
@@ -544,15 +528,10 @@ static bool CompileTerrainComputeProgram()
 #version 450 core
 layout(local_size_x = 128) in;
 
-struct TerrainVertexInput
+struct TerrainCellInput
 {
-	vec4 pos_u;
-	vec4 uv_pad;
-};
-
-struct TerrainTriangleInput
-{
-	TerrainVertexInput v[3];
+	uvec4 packed;
+	vec4 height;
 };
 
 struct TerrainVertexOutput
@@ -568,7 +547,7 @@ struct TerrainVertexOutput
 
 layout(std430, binding = 0) readonly buffer TerrainInputBuffer
 {
-	TerrainTriangleInput triangles[];
+	TerrainCellInput cells[];
 };
 
 layout(std430, binding = 1) writeonly buffer TerrainVertexBuffer
@@ -576,26 +555,11 @@ layout(std430, binding = 1) writeonly buffer TerrainVertexBuffer
 	TerrainVertexOutput vertices[];
 };
 
-uniform uint triangle_count;
+uniform uint cell_count;
 uniform vec3 terrain_row0;
 uniform vec3 terrain_x_step;
 uniform vec3 terrain_z_step;
 uniform vec3 terrain_y_step;
-
-vec3 WorldPosition(TerrainVertexInput vtx)
-{
-	return vtx.pos_u.xyz;
-}
-
-vec2 BaseUv(TerrainVertexInput vtx)
-{
-	return vec2(vtx.pos_u.w, vtx.uv_pad.x);
-}
-
-vec2 LightmapUv(TerrainVertexInput vtx)
-{
-	return vtx.uv_pad.yz;
-}
 
 vec3 RotatePoint(vec3 world)
 {
@@ -605,30 +569,95 @@ vec3 RotatePoint(vec3 world)
 		terrain_z_step * world.z;
 }
 
-void WriteVertex(uint index, TerrainVertexInput vtx, vec3 position, vec3 normal)
+vec3 CellPosition(uint segment, vec4 height, uint corner)
+{
+	uint cx = segment & 255u;
+	uint cz = segment >> 8u;
+	uint x = cx;
+	uint z = cz;
+	float y = height.w;
+
+	if (corner == 0u)
+	{
+		z = cz + 1u;
+		y = height.x;
+	}
+	else if (corner == 1u)
+	{
+		x = cx + 1u;
+		z = cz + 1u;
+		y = height.y;
+	}
+	else if (corner == 2u)
+	{
+		x = cx + 1u;
+		y = height.z;
+	}
+
+	return vec3(float(x) * 16.0, y, float(z) * 16.0);
+}
+
+vec2 BaseUv(uint segment, uint rotation, uint corner)
+{
+	uint cx = segment & 255u;
+	uint cz = segment >> 8u;
+	float subx = float(cx & 7u);
+	float subz = float(7u - (cz & 7u));
+
+	if (corner == 1u || corner == 2u)
+		subx += 1.0;
+	if (corner == 2u || corner == 3u)
+		subz += 1.0;
+
+	float x = subx * 0.125;
+	float y = subz * 0.125;
+	float tile = float(rotation >> 4u);
+	uint rotator = rotation & 15u;
+
+	vec2 uv;
+	if (rotator == 1u)
+		uv = vec2(1.0 - y, x);
+	else if (rotator == 2u)
+		uv = vec2(1.0 - x, 1.0 - y);
+	else if (rotator == 3u)
+		uv = vec2(y, 1.0 - x);
+	else
+		uv = vec2(x, y);
+
+	return uv * tile;
+}
+
+vec2 LightmapUv(uint segment, uint corner)
+{
+	uint cx = segment & 255u;
+	uint cz = segment >> 8u;
+	vec2 uv = vec2(float(cx & 127u) * 0.0078125,
+		float(128u - ((cz & 127u) + 1u)) * 0.0078125);
+
+	if (corner == 1u || corner == 2u)
+		uv.x += 0.0078125;
+	if (corner == 2u || corner == 3u)
+		uv.y += 0.0078125;
+
+	return uv;
+}
+
+void WriteVertex(uint index, vec3 position, vec3 normal, vec2 base_uv, vec2 lightmap_uv)
 {
 	vertices[index].position = position;
 	vertices[index].color = 0xffffffffu;
 	vertices[index].normal = normal;
 	vertices[index].lmpage = 0;
-	vertices[index].uv1 = BaseUv(vtx);
-	vertices[index].uv2 = LightmapUv(vtx);
+	vertices[index].uv1 = base_uv;
+	vertices[index].uv2 = lightmap_uv;
 	vertices[index].uvslide = vec2(0.0);
 }
 
-void main()
+void EmitTriangle(uint vertex_base,
+	vec3 world0, vec3 world1, vec3 world2,
+	vec2 uv0, vec2 uv1, vec2 uv2,
+	vec2 lm0, vec2 lm1, vec2 lm2)
 {
-	uint id = gl_GlobalInvocationID.x;
-	if (id >= triangle_count)
-		return;
-
-	TerrainVertexInput v0 = triangles[id].v[0];
-	TerrainVertexInput v1 = triangles[id].v[1];
-	TerrainVertexInput v2 = triangles[id].v[2];
-	vec3 world0 = WorldPosition(v0);
-	vec3 world1 = WorldPosition(v1);
-	vec3 world2 = WorldPosition(v2);
-
 	vec3 rotated0 = RotatePoint(world0);
 	vec3 rotated1 = RotatePoint(world1);
 	vec3 rotated2 = RotatePoint(world2);
@@ -648,18 +677,47 @@ void main()
 		normal = vec3(0.0, 1.0, 0.0);
 	}
 
-	uint vertex_base = id * 3u;
 	if (!visible)
 	{
-		WriteVertex(vertex_base + 0u, v0, world0, normal);
-		WriteVertex(vertex_base + 1u, v1, world0, normal);
-		WriteVertex(vertex_base + 2u, v2, world0, normal);
+		WriteVertex(vertex_base + 0u, world0, normal, uv0, lm0);
+		WriteVertex(vertex_base + 1u, world0, normal, uv1, lm1);
+		WriteVertex(vertex_base + 2u, world0, normal, uv2, lm2);
 		return;
 	}
 
-	WriteVertex(vertex_base + 0u, v0, world0, normal);
-	WriteVertex(vertex_base + 1u, v1, world1, normal);
-	WriteVertex(vertex_base + 2u, v2, world2, normal);
+	WriteVertex(vertex_base + 0u, world0, normal, uv0, lm0);
+	WriteVertex(vertex_base + 1u, world1, normal, uv1, lm1);
+	WriteVertex(vertex_base + 2u, world2, normal, uv2, lm2);
+}
+
+void main()
+{
+	uint id = gl_GlobalInvocationID.x;
+	if (id >= cell_count)
+		return;
+
+	TerrainCellInput cell = cells[id];
+	uint segment = cell.packed.x;
+	uint rotation = cell.packed.y;
+
+	vec3 world0 = CellPosition(segment, cell.height, 0u);
+	vec3 world1 = CellPosition(segment, cell.height, 1u);
+	vec3 world2 = CellPosition(segment, cell.height, 2u);
+	vec3 world3 = CellPosition(segment, cell.height, 3u);
+
+	vec2 uv0 = BaseUv(segment, rotation, 0u);
+	vec2 uv1 = BaseUv(segment, rotation, 1u);
+	vec2 uv2 = BaseUv(segment, rotation, 2u);
+	vec2 uv3 = BaseUv(segment, rotation, 3u);
+
+	vec2 lm0 = LightmapUv(segment, 0u);
+	vec2 lm1 = LightmapUv(segment, 1u);
+	vec2 lm2 = LightmapUv(segment, 2u);
+	vec2 lm3 = LightmapUv(segment, 3u);
+
+	uint vertex_base = id * 6u;
+	EmitTriangle(vertex_base + 0u, world0, world1, world3, uv0, uv1, uv3, lm0, lm1, lm3);
+	EmitTriangle(vertex_base + 3u, world3, world1, world2, uv3, uv1, uv2, lm3, lm1, lm2);
 }
 )glsl";
 
@@ -706,7 +764,7 @@ void main()
 		return false;
 	}
 
-	Terrain_compute_triangle_count_uniform = glGetUniformLocation(Terrain_compute_program, "triangle_count");
+	Terrain_compute_cell_count_uniform = glGetUniformLocation(Terrain_compute_program, "cell_count");
 	Terrain_compute_row0_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_row0");
 	Terrain_compute_xstep_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_x_step");
 	Terrain_compute_zstep_uniform = glGetUniformLocation(Terrain_compute_program, "terrain_z_step");
@@ -792,13 +850,9 @@ static void MarkTerrainComputePoint(int seg)
 	GlobalTransCount++;
 }
 
-static float TerrainGpuPointHeight(int seg)
+static float TerrainGpuCellHeight(int seg)
 {
-	float y;
-	if (Terrain_seg[seg].mody == Terrain_seg[seg].y)
-		y = Terrain_seg[seg].ypos * TERRAIN_HEIGHT_INCREMENT;
-	else
-		y = Terrain_seg[seg].mody;
+	float y = Terrain_seg[seg].y;
 
 	if (y < 0.0f)
 		y = 0.0f;
@@ -807,243 +861,32 @@ static float TerrainGpuPointHeight(int seg)
 	return y;
 }
 
-static TerrainGpuVertexInput TerrainGpuMakeVertex(const TerrainGpuPolyPoint& point)
+static void TerrainGpuAppendCell(int segment)
 {
-	TerrainGpuVertexInput input = {};
-	int x = point.seg % TERRAIN_WIDTH;
-	int z = point.seg / TERRAIN_WIDTH;
-	input.x = x * TERRAIN_SIZE;
-	input.y = TerrainGpuPointHeight(point.seg);
-	input.z = z * TERRAIN_SIZE;
-	input.u1 = point.u1;
-	input.v1 = point.v1;
-	input.u2 = point.u2;
-	input.v2 = point.v2;
-	return input;
-}
-
-static void TerrainGpuAppendTriangle(const TerrainGpuPolyPoint& p0, const TerrainGpuPolyPoint& p1,
-	const TerrainGpuPolyPoint& p2, int texture, int lightmap)
-{
-	TerrainGpuTriangleWork work = {};
-	work.texture = texture;
-	work.lightmap = lightmap;
-	work.input.v[0] = TerrainGpuMakeVertex(p0);
-	work.input.v[1] = TerrainGpuMakeVertex(p1);
-	work.input.v[2] = TerrainGpuMakeVertex(p2);
-	Terrain_compute_work.push_back(work);
-}
-
-static void TerrainGpuAppendFan(TerrainGpuPolyPoint* points, int point_count, int texture, int lightmap)
-{
-	if (point_count < 3)
+	int cx = segment % TERRAIN_WIDTH;
+	int cz = segment / TERRAIN_WIDTH;
+	if (cx >= TERRAIN_WIDTH - 1 || cz >= TERRAIN_DEPTH - 1)
 		return;
 
-	for (int i = 1; i < point_count - 1; i++)
-		TerrainGpuAppendTriangle(points[0], points[i], points[i + 1], texture, lightmap);
-}
-
-static void BuildTerrainComputeCellTriangles(int index)
-{
-	int i;
-	int cur_seg;
-	int n = Terrain_list[index].segment;
-	int lod = Terrain_list[index].lod;
-	int bottom_start, left_start, right_start;
-	int point_count = 0;
-
-	terrain_segment* tseg = &Terrain_seg[n];
+	terrain_segment* tseg = &Terrain_seg[segment];
 	if ((tseg->flags & TF_INVISIBLE) && !Show_invisible_terrain)
 		return;
 
 	terrain_tex_segment* texseg = &Terrain_tex_seg[tseg->texseg_index];
-	int rotator = texseg->rotation & 0x0F;
-	int tile = texseg->rotation >> 4;
-	int simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
-	int cx = n % TERRAIN_WIDTH;
-	int cz = n / TERRAIN_WIDTH;
+	TerrainGpuCellWork work = {};
+	work.texture = texseg->tex_index;
+	work.lightmap = TerrainLightmaps[tseg->lm_quad];
+	work.input.packed[0] = (uint32_t)segment;
+	work.input.packed[1] = (uint32_t)texseg->rotation;
 
-	if (!(cx < TERRAIN_WIDTH - simplemul && cz < TERRAIN_DEPTH - simplemul || lod != (MAX_TERRAIN_LOD - 1)))
-		return;
-
-	float lightmap_u = (cx % 128) / 128.0f;
-	float lightmap_v = (128 - ((cz % 128) + simplemul)) / 128.0f;
-	float uvadjust;
-	int subx = cx % MAX_LOD_SIZE;
-	int subz = (MAX_LOD_SIZE - 1) - ((cz + (simplemul - 1)) % MAX_LOD_SIZE);
-	bool solid_square = true;
-	int testt = 0, testr = 0, testb = 0, testl = 0;
-	int smul_x, smul_z;
-
-	if (cx + simplemul == TERRAIN_WIDTH)
-	{
-		smul_x = simplemul - 1;
-		solid_square = false;
-	}
-	else
-		smul_x = simplemul;
-	if (cz + simplemul == TERRAIN_DEPTH)
-	{
-		solid_square = false;
-		smul_z = simplemul - 1;
-	}
-	else
-		smul_z = simplemul;
-
-	TerrainGpuPolyPoint poly[256] = {};
-	int texture = texseg->tex_index;
-	int lightmap = TerrainLightmaps[tseg->lm_quad];
-
-	if (lod == (MAX_TERRAIN_LOD - 1))
-	{
-		uvadjust = simplemul / 128.0f;
-		cur_seg = n + (TERRAIN_WIDTH * smul_z);
-		poly[0].seg = cur_seg;
-
-		cur_seg = n + (TERRAIN_WIDTH * smul_z) + smul_x;
-		poly[1].seg = cur_seg;
-
-		cur_seg = n + smul_x;
-		poly[2].seg = cur_seg;
-
-		poly[3].seg = n;
-
-		poly[0].u1 = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx];
-		poly[0].v1 = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx];
-		poly[1].u1 = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + 1];
-		poly[1].v1 = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx + 1];
-		poly[2].u1 = tile * TerrainUSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx + 1];
-		poly[2].v1 = tile * TerrainVSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx + 1];
-		poly[3].u1 = tile * TerrainUSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx];
-		poly[3].v1 = tile * TerrainVSpeedup[rotator][(subz + 1) * LOD_ROW_SIZE + subx];
-
-		poly[0].u2 = lightmap_u;
-		poly[0].v2 = lightmap_v;
-		poly[1].u2 = lightmap_u + uvadjust;
-		poly[1].v2 = lightmap_v;
-		poly[2].u2 = lightmap_u + uvadjust;
-		poly[2].v2 = lightmap_v + uvadjust;
-		poly[3].u2 = lightmap_u;
-		poly[3].v2 = lightmap_v + uvadjust;
-
-		TerrainGpuAppendTriangle(poly[0], poly[1], poly[3], texture, lightmap);
-		TerrainGpuAppendTriangle(poly[3], poly[1], poly[2], texture, lightmap);
-		return;
-	}
-
-	uvadjust = (simplemul / 128.0f) / simplemul;
-	float uvmul = uvadjust * simplemul;
-	right_start = Terrain_list[index].top_count;
-	bottom_start = right_start + Terrain_list[index].right_count;
-	left_start = bottom_start + Terrain_list[index].bottom_count;
-	point_count = left_start + Terrain_list[index].left_count;
-
-	if (solid_square)
-	{
-		for (i = 0; i < simplemul; i++)
-		{
-			if (Terrain_list[index].top_edge & (1 << i))
-			{
-				cur_seg = n + i + (TERRAIN_WIDTH * smul_z);
-				poly[testt].seg = cur_seg;
-				poly[testt].u1 = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
-				poly[testt].v1 = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
-				poly[testt].u2 = lightmap_u + (i * uvadjust);
-				poly[testt].v2 = lightmap_v;
-				testt++;
-			}
-
-			if (Terrain_list[index].right_edge & (1 << i))
-			{
-				cur_seg = n + (TERRAIN_WIDTH * (smul_z - i)) + smul_x;
-				poly[right_start + testr].seg = cur_seg;
-				poly[right_start + testr].u1 = tile * TerrainUSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + simplemul];
-				poly[right_start + testr].v1 = tile * TerrainVSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + simplemul];
-				poly[right_start + testr].u2 = lightmap_u + uvmul;
-				poly[right_start + testr].v2 = lightmap_v + (i * uvadjust);
-				testr++;
-			}
-
-			if (Terrain_list[index].bottom_edge & (1 << i))
-			{
-				cur_seg = n + (smul_x - i);
-				poly[bottom_start + testb].seg = cur_seg;
-				poly[bottom_start + testb].u1 = tile * TerrainUSpeedup[rotator][((subz + simplemul) * LOD_ROW_SIZE) + (subx + simplemul) - i];
-				poly[bottom_start + testb].v1 = tile * TerrainVSpeedup[rotator][((subz + simplemul) * LOD_ROW_SIZE) + (subx + simplemul) - i];
-				poly[bottom_start + testb].u2 = lightmap_u + uvmul - (i * uvadjust);
-				poly[bottom_start + testb].v2 = lightmap_v + uvmul;
-				testb++;
-			}
-
-			if (Terrain_list[index].left_edge & (1 << i))
-			{
-				cur_seg = n + (TERRAIN_WIDTH * i);
-				poly[left_start + testl].seg = cur_seg;
-				poly[left_start + testl].u1 = tile * TerrainUSpeedup[rotator][((subz + simplemul - i) * LOD_ROW_SIZE) + subx];
-				poly[left_start + testl].v1 = tile * TerrainVSpeedup[rotator][((subz + simplemul - i) * LOD_ROW_SIZE) + subx];
-				poly[left_start + testl].u2 = lightmap_u;
-				poly[left_start + testl].v2 = lightmap_v + uvmul - (i * uvadjust);
-				testl++;
-			}
-		}
-	}
-	else
-	{
-		for (i = 0; i < smul_x; i++)
-		{
-			if (Terrain_list[index].top_edge & (1 << i))
-			{
-				cur_seg = n + i + (TERRAIN_WIDTH * smul_z);
-				poly[testt].seg = cur_seg;
-				poly[testt].u1 = tile * TerrainUSpeedup[rotator][subz * LOD_ROW_SIZE + subx + i];
-				poly[testt].v1 = tile * TerrainVSpeedup[rotator][subz * LOD_ROW_SIZE];
-				poly[testt].u2 = lightmap_u + (i * uvadjust);
-				poly[testt].v2 = lightmap_v;
-				testt++;
-			}
-
-			if (Terrain_list[index].bottom_edge & (1 << i))
-			{
-				cur_seg = n + (smul_x - i);
-				poly[bottom_start + testb].seg = cur_seg;
-				poly[bottom_start + testb].u1 = tile * TerrainUSpeedup[rotator][((subz + smul_z) * LOD_ROW_SIZE) + subx + smul_x - i];
-				poly[bottom_start + testb].v1 = tile * TerrainVSpeedup[rotator][((subz + smul_z) * LOD_ROW_SIZE) + subx + smul_x - i];
-				poly[bottom_start + testb].u2 = lightmap_u + uvmul - (i * uvadjust);
-				poly[bottom_start + testb].v2 = lightmap_v + uvmul;
-				testb++;
-			}
-		}
-
-		for (i = 0; i < smul_z; i++)
-		{
-			if (Terrain_list[index].right_edge & (1 << i))
-			{
-				cur_seg = n + (TERRAIN_WIDTH * (smul_z - i)) + smul_x;
-				poly[right_start + testr].seg = cur_seg;
-				poly[right_start + testr].u1 = tile * TerrainUSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + smul_x];
-				poly[right_start + testr].v1 = tile * TerrainVSpeedup[rotator][((subz + i) * LOD_ROW_SIZE) + subx + smul_x];
-				poly[right_start + testr].u2 = lightmap_u + uvmul;
-				poly[right_start + testr].v2 = lightmap_v + (i * uvadjust);
-				testr++;
-			}
-
-			if (Terrain_list[index].left_edge & (1 << i))
-			{
-				cur_seg = n + (TERRAIN_WIDTH * i);
-				poly[left_start + testl].seg = cur_seg;
-				poly[left_start + testl].u1 = tile * TerrainUSpeedup[rotator][((subz + smul_z - i) * LOD_ROW_SIZE) + subx];
-				poly[left_start + testl].v1 = tile * TerrainVSpeedup[rotator][((subz + smul_z - i) * LOD_ROW_SIZE) + subx];
-				poly[left_start + testl].u2 = lightmap_u;
-				poly[left_start + testl].v2 = lightmap_v + uvmul - (i * uvadjust);
-				testl++;
-			}
-		}
-	}
-
-	TerrainGpuAppendFan(poly, point_count, texture, lightmap);
+	work.input.height[0] = TerrainGpuCellHeight(segment + TERRAIN_WIDTH);
+	work.input.height[1] = TerrainGpuCellHeight(segment + TERRAIN_WIDTH + 1);
+	work.input.height[2] = TerrainGpuCellHeight(segment + 1);
+	work.input.height[3] = TerrainGpuCellHeight(segment);
+	Terrain_compute_cell_work.push_back(work);
 }
 
-static bool TerrainGpuTriangleLess(const TerrainGpuTriangleWork& left, const TerrainGpuTriangleWork& right)
+static bool TerrainGpuCellLess(const TerrainGpuCellWork& left, const TerrainGpuCellWork& right)
 {
 	if (left.texture != right.texture)
 		return left.texture < right.texture;
@@ -1052,15 +895,15 @@ static bool TerrainGpuTriangleLess(const TerrainGpuTriangleWork& left, const Ter
 
 static void FinalizeTerrainComputeBatches()
 {
-	std::sort(Terrain_compute_work.begin(), Terrain_compute_work.end(), TerrainGpuTriangleLess);
+	std::sort(Terrain_compute_cell_work.begin(), Terrain_compute_cell_work.end(), TerrainGpuCellLess);
 
-	Terrain_compute_inputs.resize(Terrain_compute_work.size());
+	Terrain_compute_cell_inputs.resize(Terrain_compute_cell_work.size());
 	Terrain_compute_batches.clear();
 
-	for (size_t i = 0; i < Terrain_compute_work.size(); i++)
+	for (size_t i = 0; i < Terrain_compute_cell_work.size(); i++)
 	{
-		const TerrainGpuTriangleWork& work = Terrain_compute_work[i];
-		Terrain_compute_inputs[i] = work.input;
+		const TerrainGpuCellWork& work = Terrain_compute_cell_work[i];
+		Terrain_compute_cell_inputs[i] = work.input;
 
 		if (Terrain_compute_batches.empty() ||
 			Terrain_compute_batches.back().texture != work.texture ||
@@ -1069,70 +912,37 @@ static void FinalizeTerrainComputeBatches()
 			TerrainGpuBatch batch = {};
 			batch.texture = work.texture;
 			batch.lightmap = work.lightmap;
-			batch.first_vertex = (int)(i * 3);
+			batch.first_vertex = (int)(i * 6);
 			batch.vertex_count = 0;
 			Terrain_compute_batches.push_back(batch);
 		}
 
-		Terrain_compute_batches.back().vertex_count += 3;
+		Terrain_compute_batches.back().vertex_count += 6;
 	}
+
+	GlobalTransCount = (int)(Terrain_compute_cell_inputs.size() * 4);
 }
 
 static void BuildTerrainComputeDrawWork(int cellcount, bool from_automap)
 {
-	int lod, simplemul, edgecount;
-	int i, n[200], t, k, cx, cz;
+	(void)from_automap;
 
-	Terrain_compute_work.clear();
-	Terrain_compute_inputs.clear();
+	Terrain_compute_cell_work.clear();
+	Terrain_compute_cell_inputs.clear();
 	Terrain_compute_batches.clear();
-	Terrain_compute_work.reserve(cellcount * 2);
+	Terrain_compute_cell_work.reserve(cellcount);
 
-	for (i = 0; i < cellcount; i++)
+	for (int i = 0; i < cellcount; i++)
 	{
-		int ax, az;
-		t = Terrain_list[i].segment;
-		lod = Terrain_list[i].lod;
-		simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
-		cx = t & (TERRAIN_WIDTH - 1);
-		cz = t >> 8;
-
-		ax = az = simplemul;
-
-		if (cx + ax >= TERRAIN_WIDTH)
-			ax = (TERRAIN_WIDTH - 1) - cx;
-		if (cz + az >= TERRAIN_DEPTH)
-			az = (TERRAIN_DEPTH - 1) - cz;
-
-		n[0] = t;
-		n[1] = t + (TERRAIN_WIDTH * az);
-		n[2] = t + (az * TERRAIN_WIDTH) + ax;
-		n[3] = t + ax;
-
-		Terrain_seg[n[0]].mody = Terrain_seg[n[0]].y;
-		Terrain_seg[n[1]].mody = Terrain_seg[n[1]].y;
-		Terrain_seg[n[2]].mody = Terrain_seg[n[2]].y;
-		Terrain_seg[n[3]].mody = Terrain_seg[n[3]].y;
-		if (StateLimited || from_automap)
+		int segment = Terrain_list[i].segment;
+		int lod = Terrain_list[i].lod;
+		int simplemul = 1 << ((MAX_TERRAIN_LOD - 1) - lod);
+		for (int z = 0; z < simplemul; z++)
 		{
-			int unique_id = Terrain_tex_seg[Terrain_seg[t].texseg_index].tex_index;
-			State_elements[i].facenum = i;
-			State_elements[i].sort_key = unique_id + (Terrain_seg[t].lm_quad << 24);
+			for (int x = 0; x < simplemul; x++)
+				TerrainGpuAppendCell(segment + x + (z * TERRAIN_WIDTH));
 		}
 	}
-
-	for (i = 0; i < cellcount; i++)
-	{
-		edgecount = BuildEdgeLists(n, i);
-		for (k = 0; k < edgecount; k++)
-		{
-			if (Terrain_rotate_list[n[k]] != TS_FrameCount)
-				MarkTerrainComputePoint(n[k]);
-		}
-	}
-
-	for (i = 0; i < cellcount; i++)
-		BuildTerrainComputeCellTriangles(i);
 
 	FinalizeTerrainComputeBatches();
 }
@@ -1167,7 +977,7 @@ static void SetTerrainComputeViewUniforms()
 	vector z_step = z_step_source * viewer_orient;
 	vector y_step = y_step_source * viewer_orient;
 
-	glUniform1ui(Terrain_compute_triangle_count_uniform, (GLuint)Terrain_compute_inputs.size());
+	glUniform1ui(Terrain_compute_cell_count_uniform, (GLuint)Terrain_compute_cell_inputs.size());
 	glUniform3f(Terrain_compute_row0_uniform, row0.x, row0.y, row0.z);
 	glUniform3f(Terrain_compute_xstep_uniform, x_step.x, x_step.y, x_step.z);
 	glUniform3f(Terrain_compute_zstep_uniform, z_step.x, z_step.y, z_step.z);
@@ -1191,25 +1001,25 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		return false;
 
 	BuildTerrainComputeDrawWork(cellcount, from_automap);
-	if (Terrain_compute_inputs.empty())
+	if (Terrain_compute_cell_inputs.empty())
 	{
 		SetTerrainComputeStatusActive(cellcount);
 		return true;
 	}
 
-	EnsureTerrainComputeVertexCapacity(Terrain_compute_inputs.size() * 3);
+	EnsureTerrainComputeVertexCapacity(Terrain_compute_cell_inputs.size() * 6);
 
 	glUseProgram(Terrain_compute_program);
 	SetTerrainComputeViewUniforms();
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, Terrain_compute_input_buffer);
 	glBufferData(GL_SHADER_STORAGE_BUFFER,
-		(GLsizeiptr)(Terrain_compute_inputs.size() * sizeof(TerrainGpuTriangleInput)),
-		Terrain_compute_inputs.data(), GL_STREAM_DRAW);
+		(GLsizeiptr)(Terrain_compute_cell_inputs.size() * sizeof(TerrainGpuCellInput)),
+		Terrain_compute_cell_inputs.data(), GL_STREAM_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, Terrain_compute_input_buffer);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, Terrain_compute_vertex_buffer);
 
-	GLuint groups = (GLuint)((Terrain_compute_inputs.size() + 127) / 128);
+	GLuint groups = (GLuint)((Terrain_compute_cell_inputs.size() + 127) / 128);
 	glDispatchCompute(groups, 1, 1);
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 	rendTEMP_ClearShaderBinding();

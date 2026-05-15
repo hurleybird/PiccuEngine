@@ -105,7 +105,8 @@ static void GL_RestoreFramebufferTextureState()
 	rend_ClearBoundTextures();
 }
 
-void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+static void GL_DrawFramebufferQuadInternal(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
+	bool clear_target)
 {
 	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
 	GLboolean depth_enabled = glIsEnabled(GL_DEPTH_TEST);
@@ -131,8 +132,11 @@ void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsig
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
-	glClearColor(0.0, 0.0, 0.0, 1.0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	if (clear_target)
+	{
+		glClearColor(0.0, 0.0, 0.0, 1.0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	}
 
 	glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -146,6 +150,16 @@ void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsig
 	glDepthMask(depth_mask);
 	GL_RestoreFramebufferTextureState();
 	rend_RestoreLegacy();
+}
+
+void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+{
+	GL_DrawFramebufferQuadInternal(target, x, y, w, h, true);
+}
+
+void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h)
+{
+	GL_DrawFramebufferQuadInternal(target, x, y, w, h, false);
 }
 
 void ColorFramebuffer::Update(int width, int height, GLint internal_format, GLenum format, GLenum type)
@@ -1081,14 +1095,14 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 	GL_BindFramebufferTexture(source->ColorTextureForRead(), 0, GL_LINEAR);
 	if (depth_texture != 0)
 		GL_BindFramebufferTexture(depth_texture, 2, GL_NEAREST);
-	GL_DrawFramebufferQuad(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);
+	GL_DrawFramebufferQuadNoClear(framebuffers[0].Handle(), 0, 0, widths[0], heights[0]);
 
 	downsampleshader.Use();
 	for (int i = 1; i < downsample_count; i++)
 	{
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(framebuffers[i - 1].ColorTextureForRead(), 0, GL_LINEAR);
-		GL_DrawFramebufferQuad(framebuffers[i].Handle(), 0, 0, widths[i], heights[i]);
+		GL_DrawFramebufferQuadNoClear(framebuffers[i].Handle(), 0, 0, widths[i], heights[i]);
 		downsampleshader.Use();
 	}
 
@@ -1102,7 +1116,7 @@ Framebuffer* BloomResources::Apply(Framebuffer* source, const renderer_preferred
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(framebuffers[level].ColorTextureForRead(), 0, GL_LINEAR);
 		GL_BindFramebufferTexture(framebuffers[previous_index].ColorTextureForRead(), 1, GL_LINEAR);
-		GL_DrawFramebufferQuad(framebuffers[output_index].Handle(), 0, 0, widths[level], heights[level]);
+		GL_DrawFramebufferQuadNoClear(framebuffers[output_index].Handle(), 0, 0, widths[level], heights[level]);
 		previous_index = output_index;
 		output_index++;
 	}

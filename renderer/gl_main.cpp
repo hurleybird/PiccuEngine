@@ -465,7 +465,7 @@ void GL3Renderer::Flip()
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(hbao_scene_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
-		GL_DrawFramebufferQuad(hbao_composite_framebuffer.Handle(), 0, 0,
+		GL_DrawFramebufferQuadNoClear(hbao_composite_framebuffer.Handle(), 0, 0,
 			hbao_composite_framebuffer.Width(), hbao_composite_framebuffer.Height());
 		present_framebuffer = &hbao_composite_framebuffer;
 	}

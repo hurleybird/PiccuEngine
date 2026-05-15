@@ -497,7 +497,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(depth_texture, 0, GL_NEAREST);
-	GL_DrawFramebufferQuad(ao_depth_framebuffer.Handle(), 0, 0, ao_width, ao_height);
+	GL_DrawFramebufferQuadNoClear(ao_depth_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 
 	//-------------------------------------------------------------------------
 	// Pass 2: AO into ao_framebuffer.
@@ -528,7 +528,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	rend_ClearBoundTextures();
 	GL_BindFramebufferTexture(ao_depth_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
 	GL_BindFramebufferTexture(noise_texture, 1, GL_NEAREST);
-	GL_DrawFramebufferQuad(ao_framebuffer.Handle(), 0, 0, ao_width, ao_height);
+	GL_DrawFramebufferQuadNoClear(ao_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 
 	//-------------------------------------------------------------------------
 	// Pass 3: Optional separable bilateral blur (X then Y).
@@ -552,7 +552,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform1i(blur_x_radius, blur_radius);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(ao_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
-		GL_DrawFramebufferQuad(ao_blur_framebuffer.Handle(), 0, 0, ao_width, ao_height);
+		GL_DrawFramebufferQuadNoClear(ao_blur_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 
 		blur_y_shader.Use();
 		glUniform2f(blur_y_delta, 0.0f, 1.0f / (float)ao_height);
@@ -560,7 +560,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform1i(blur_y_radius, blur_radius);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(ao_blur_framebuffer.ColorTextureForRead(), 0, GL_NEAREST);
-		GL_DrawFramebufferQuad(ao_framebuffer.Handle(), 0, 0, ao_width, ao_height);
+		GL_DrawFramebufferQuadNoClear(ao_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 
 		blurred = &ao_framebuffer;
 	}
@@ -623,8 +623,6 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glDisable(GL_SCISSOR_TEST);
 		glDepthMask(GL_FALSE);
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glClearColor(1.0f, 1.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
 		glBindVertexArray(GL_GetFramebufferVAO());
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glBindVertexArray(0);
@@ -667,7 +665,7 @@ void HBAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 			GL_BindFramebufferTexture(suppression_mask_texture, 0, GL_NEAREST);
 		if (scene_color_texture != 0)
 			GL_BindFramebufferTexture(scene_color_texture, 1, GL_LINEAR);
-		GL_DrawFramebufferQuad(suppression_framebuffer.Handle(), 0, 0, ao_width, ao_height);
+		GL_DrawFramebufferQuadNoClear(suppression_framebuffer.Handle(), 0, 0, ao_width, ao_height);
 		final_suppression_mask = suppression_framebuffer.ColorTextureForRead();
 	}
 

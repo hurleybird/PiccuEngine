@@ -242,6 +242,7 @@ struct HBAOMaskResources
 
 void GL_BindFramebufferTexture(GLuint texture, int unit, GLenum filter);
 void GL_DrawFramebufferQuad(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
+void GL_DrawFramebufferQuadNoClear(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h);
 //Lazy accessor for the framebuffer fullscreen-triangle VAO. Initialises it if
 //needed. Use this when you need to draw a fullscreen triangle to a target you
 //have already bound yourself (and do not want GL_DrawFramebufferQuad's clear).

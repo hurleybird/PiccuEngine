@@ -277,6 +277,7 @@ private:
 #elif WIN32
 	int Setup(HDC glhdc);
 #endif
+	void ApplySwapInterval(bool enabled);
 	void GetInformation();
 
 	//IMAGES

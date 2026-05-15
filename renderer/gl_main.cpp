@@ -20,6 +20,42 @@
 #include "rtperformance.h"
 #include <math.h>
 
+#if defined(WIN32) && !defined(SDL3)
+typedef HRESULT(WINAPI* DwmFlushProc)();
+
+static DwmFlushProc GetDwmFlushProc()
+{
+	static bool tried_load = false;
+	static DwmFlushProc proc = nullptr;
+
+	if (!tried_load)
+	{
+		tried_load = true;
+		HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
+		if (dwmapi)
+			proc = (DwmFlushProc)GetProcAddress(dwmapi, "DwmFlush");
+	}
+
+	return proc;
+}
+
+static void FlushDwmForVSync()
+{
+	DwmFlushProc proc = GetDwmFlushProc();
+	if (!proc)
+		return;
+
+	static bool logged_failure = false;
+	HRESULT result = proc();
+	if (FAILED(result) && !logged_failure)
+	{
+		logged_failure = true;
+		mprintf((0, "DwmFlush failed with 0x%08lx; falling back to WGL swap interval only.\n",
+			(unsigned long)result));
+	}
+}
+#endif
+
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
 	0, 1, 0, 0,
@@ -305,20 +341,7 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			SetGammaValue(pref_state->gamma);
 		}
 
-#ifdef SDL3
-		if (pref_state->vsync_on)
-			SDL_GL_SetSwapInterval(1);
-		else
-			SDL_GL_SetSwapInterval(0);
-#elif WIN32
-		if (dwglSwapIntervalEXT)
-		{
-			if (pref_state->vsync_on)
-				dwglSwapIntervalEXT(1);
-			else
-				dwglSwapIntervalEXT(0);
-		}
-#endif
+		ApplySwapInterval(pref_state->vsync_on != 0);
 		//}
 	}
 	else
@@ -488,6 +511,8 @@ void GL3Renderer::Flip()
 	SDL_GL_SwapWindow(GLWindow);
 #elif defined(WIN32)
 	SwapBuffers((HDC)hOpenGLDC);
+	if (OpenGL_preferred_state.vsync_on)
+		FlushDwmForVSync();
 #elif defined(__LINUX__)
 	SDL_GL_SwapBuffers();
 #endif

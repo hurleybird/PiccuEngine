@@ -409,6 +409,7 @@ inline int RendererMsaaSamples(const renderer_preferred_state& state)
 
 #if defined(WIN32) && !defined(SDL3)
 extern PFNWGLSWAPINTERVALEXTPROC dwglSwapIntervalEXT;
+extern PFNWGLGETSWAPINTERVALEXTPROC dwglGetSwapIntervalEXT;
 extern PFNWGLCREATECONTEXTATTRIBSARBPROC dwglCreateContextAttribsARB;
 #endif
 extern bool Already_loaded;

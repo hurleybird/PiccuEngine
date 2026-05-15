@@ -364,6 +364,35 @@ static void SetFramecapFromRefreshRate(double hz)
 	mprintf((0, "Using display refresh framecap of %.3f Hz\n", hz));
 }
 
+static bool UseCoreVSyncFramePacing()
+{
+	return Render_preferred_state.vsync_on && OpenGLProfile == GLPROFILE_CORE &&
+		Min_allowed_frametime > 0.0 && !Dedicated_server;
+}
+
+static double GetCoreVSyncFrameTarget(double current_timer)
+{
+	const double interval = Min_allowed_frametime;
+	const double tolerance = interval * 0.05;
+	const double elapsed = current_timer - last_timer;
+
+	if (elapsed <= 0.0)
+		return last_timer + interval;
+
+	int intervals = (int)((elapsed - tolerance) / interval);
+	if (intervals < 1)
+		intervals = 1;
+
+	double target_time = last_timer + intervals * interval;
+	while (target_time < current_timer - tolerance)
+	{
+		intervals++;
+		target_time = last_timer + intervals * interval;
+	}
+
+	return target_time;
+}
+
 void EnableDisplayRefreshFramecap()
 {
 	Display_refresh_framecap = true;
@@ -2877,12 +2906,19 @@ void GameFrame(void)
 		double current_timer = timer_GetTime64();
 		double target_time = last_timer + Min_allowed_frametime;
 		if (current_timer > target_time) //If running slow, drop frames
-			target_time = current_timer;
-		else
 		{
-			if ((current_timer - last_timer) < Min_allowed_frametime)
+			if (UseCoreVSyncFramePacing())
+				target_time = GetCoreVSyncFrameTarget(current_timer);
+			else
+				target_time = current_timer;
+		}
+
+		if (current_timer < target_time)
+		{
+			const double wait_time = target_time - current_timer;
+			if (wait_time > 0.0)
 			{
-				unsigned int sleeptime = (Min_allowed_frametime - (current_timer - last_timer)) * 1000;
+				unsigned int sleeptime = (unsigned int)(wait_time * 1000);
 				//mprintf((0,"Sleeping for %d ms\n",sleeptime));
 				if (Dedicated_server)
 				{

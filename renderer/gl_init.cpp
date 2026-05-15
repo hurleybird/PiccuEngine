@@ -31,6 +31,7 @@
 //hmm..
 #elif defined(WIN32)
 PFNWGLSWAPINTERVALEXTPROC dwglSwapIntervalEXT;
+PFNWGLGETSWAPINTERVALEXTPROC dwglGetSwapIntervalEXT;
 PFNWGLCREATECONTEXTATTRIBSARBPROC dwglCreateContextAttribsARB;
 
 //	Moved from DDGR library
@@ -138,6 +139,7 @@ int GL3Renderer::Setup(SDL_Window* window)
 		Error("GL3Renderer::Setup: SDL_GL_CreateContext failed!\n%s", SDL_GetError());
 		return 0;
 	}
+	GLContext = context;
 
 	if (!Already_loaded)
 	{
@@ -168,7 +170,7 @@ static GLADapiproc opengl_GLADLoad(const char* name)
 	}
 	void* ptr = wglGetProcAddress(name);
 	//I love OpenGL btw
-	if (!ptr)
+	if (!ptr || ptr == (void*)1 || ptr == (void*)2 || ptr == (void*)3 || ptr == (void*)-1)
 	{
 		ptr = GetProcAddress(glDllhandle, name);
 	}
@@ -447,6 +449,7 @@ int GL3Renderer::Setup(HDC glhdc)
 	}
 
 	dwglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC)opengl_GLADLoad("wglSwapIntervalEXT");
+	dwglGetSwapIntervalEXT = (PFNWGLGETSWAPINTERVALEXTPROC)opengl_GLADLoad("wglGetSwapIntervalEXT");
 
 	Already_loaded = true;
 
@@ -454,6 +457,37 @@ int GL3Renderer::Setup(HDC glhdc)
 
 }
 #endif
+
+void GL3Renderer::ApplySwapInterval(bool enabled)
+{
+	const int interval = enabled ? 1 : 0;
+
+#if defined(SDL3)
+	if (!SDL_GL_SetSwapInterval(interval))
+	{
+		mprintf((0, "SDL_GL_SetSwapInterval(%d) failed: %s\n", interval, SDL_GetError()));
+		return;
+	}
+	mprintf((0, "OpenGL swap interval requested %d, actual %d.\n", interval, SDL_GL_GetSwapInterval()));
+#elif defined(WIN32)
+	if (!dwglSwapIntervalEXT)
+	{
+		mprintf((0, "WGL_EXT_swap_control not available; vsync request %d ignored.\n", interval));
+		return;
+	}
+
+	if (!dwglSwapIntervalEXT(interval))
+	{
+		mprintf((0, "wglSwapIntervalEXT(%d) failed with %lu.\n", interval, (unsigned long)GetLastError()));
+		return;
+	}
+
+	if (dwglGetSwapIntervalEXT)
+		mprintf((0, "OpenGL swap interval requested %d, actual %d.\n", interval, dwglGetSwapIntervalEXT()));
+	else
+		mprintf((0, "OpenGL swap interval set to %d.\n", interval));
+#endif
+}
 
 // Gets some specific information about this particular flavor of opengl
 void GL3Renderer::GetInformation()
@@ -635,20 +669,7 @@ int GL3Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 
 	mprintf((0, "OpenGL initialization at %d x %d was successful.\n", OpenGL_state.screen_width, OpenGL_state.screen_height));
 
-#if defined(SDL3)
-	if (pref_state->vsync_on)
-		SDL_GL_SetSwapInterval(1);
-	else
-		SDL_GL_SetSwapInterval(0);
-#elif defined(WIN32)
-	if (dwglSwapIntervalEXT)
-	{
-		if (pref_state->vsync_on)
-			dwglSwapIntervalEXT(1);
-		else
-			dwglSwapIntervalEXT(0);
-	}
-#endif
+	ApplySwapInterval(pref_state->vsync_on != 0);
 
 	extern const char* blitVertexSrc;
 	extern const char* blitFragmentSrc;

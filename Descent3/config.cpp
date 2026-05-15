@@ -87,6 +87,7 @@ enum
 	CONFIG_ASPECT_4_3,
 	CONFIG_ASPECT_16_10,
 	CONFIG_ASPECT_16_9,
+	CONFIG_ASPECT_21_9,
 	CONFIG_ASPECT_COUNT
 };
 
@@ -94,7 +95,8 @@ static const ConfigAspectRatio Config_aspect_ratios[CONFIG_ASPECT_COUNT] = {
 	{5, 4, "5:4"},
 	{4, 3, "4:3"},
 	{16, 10, "16:10"},
-	{16, 9, "16:9"}
+	{16, 9, "16:9"},
+	{21, 9, "21:9"}
 };
 
 int Game_video_resolution = 1;
@@ -689,15 +691,17 @@ static int ConfigAspectOrderIndex(int aspect)
 {
 	switch (aspect)
 	{
-	case CONFIG_ASPECT_16_9:
+	case CONFIG_ASPECT_21_9:
 		return 0;
-	case CONFIG_ASPECT_16_10:
+	case CONFIG_ASPECT_16_9:
 		return 1;
-	case CONFIG_ASPECT_4_3:
+	case CONFIG_ASPECT_16_10:
 		return 2;
+	case CONFIG_ASPECT_4_3:
+		return 3;
 	case CONFIG_ASPECT_5_4:
 	default:
-		return 3;
+		return 4;
 	}
 }
 
@@ -706,10 +710,12 @@ static int ConfigAspectFromOrderIndex(int index)
 	switch (index)
 	{
 	case 0:
-		return CONFIG_ASPECT_16_9;
+		return CONFIG_ASPECT_21_9;
 	case 1:
-		return CONFIG_ASPECT_16_10;
+		return CONFIG_ASPECT_16_9;
 	case 2:
+		return CONFIG_ASPECT_16_10;
+	case 3:
 		return CONFIG_ASPECT_4_3;
 	default:
 		return CONFIG_ASPECT_5_4;

@@ -1843,6 +1843,36 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 		//if (tseg->renderframe!=((FrameCount-1)%256))
 		//	continue;
 
+		if (per_pixel_terrain_lighting)
+		{
+			bool already_spoken_for = false;
+			for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
+			{
+				if (per_pixel_lightmaps_spoken_for[lightmap_index] == whichmap)
+				{
+					already_spoken_for = true;
+					break;
+				}
+			}
+
+			if (!already_spoken_for)
+			{
+				for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
+				{
+					if (per_pixel_lightmaps_spoken_for[lightmap_index] == -1)
+					{
+						per_pixel_lightmaps_spoken_for[lightmap_index] = whichmap;
+						break;
+					}
+				}
+
+				AddPerPixelLightmapTextureLight(whichmap, pos, light_dist, red_scale, green_scale, blue_scale,
+					light_direction, dot_range);
+			}
+
+			continue;
+		}
+
 		if (Num_dynamic_cells >= MAX_DYNAMIC_CELLS)
 		{
 			mprintf((0, "Too many dynamic cells!\n"));
@@ -1879,36 +1909,6 @@ void ApplyLightingToTerrain(vector* pos, int cellnum, float light_dist, float re
 
 		if (scalar <= 0)
 			continue;
-
-		if (per_pixel_terrain_lighting)
-		{
-			bool already_spoken_for = false;
-			for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
-			{
-				if (per_pixel_lightmaps_spoken_for[lightmap_index] == whichmap)
-				{
-					already_spoken_for = true;
-					break;
-				}
-			}
-
-			if (!already_spoken_for)
-			{
-				for (int lightmap_index = 0; lightmap_index < 4; lightmap_index++)
-				{
-					if (per_pixel_lightmaps_spoken_for[lightmap_index] == -1)
-					{
-						per_pixel_lightmaps_spoken_for[lightmap_index] = whichmap;
-						break;
-					}
-				}
-
-				AddPerPixelLightmapTextureLight(whichmap, pos, light_dist, red_scale, green_scale, blue_scale,
-					light_direction, dot_range);
-			}
-
-			continue;
-		}
 
 		// Add a new face to our list
 		if (!(tseg->flags & TF_DYNAMIC))

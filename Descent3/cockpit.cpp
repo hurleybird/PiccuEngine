@@ -226,19 +226,43 @@ static float GetCockpitDisplaySpread()
 {
 	const float aspect_5_4 = 5.0f / 4.0f;
 	const float aspect_16_9 = 16.0f / 9.0f;
+	const float aspect_21_9 = 21.0f / 9.0f;
 	const float max_spread = 0.25f;
+	const float phoenix_extra_wide_scale = 1.225f;
+	const float magnum_extra_wide_scale = 0.85f;
+	const float pyro_extra_wide_scale = 1.12f;
 
-	if (Cockpit_info.ship_index != SHIP_PHOENIX_ID || Game_window_res_width <= 0 || Game_window_res_height <= 0)
+	if (Game_window_res_width <= 0 || Game_window_res_height <= 0)
 		return 0.0f;
 
 	float aspect = (float)Game_window_res_width / (float)Game_window_res_height;
-	float t = (aspect - aspect_5_4) / (aspect_16_9 - aspect_5_4);
-	if (t < 0.0f)
-		t = 0.0f;
-	else if (t > 1.0f)
-		t = 1.0f;
+	float extra_wide_t = (aspect - aspect_16_9) / (aspect_21_9 - aspect_16_9);
+	if (extra_wide_t < 0.0f)
+		extra_wide_t = 0.0f;
+	else if (extra_wide_t > 1.0f)
+		extra_wide_t = 1.0f;
+	float extra_wide_spread = max_spread * ((aspect_21_9 - aspect_16_9) / (aspect_16_9 - aspect_5_4)) * extra_wide_t;
 
-	return max_spread * t;
+	if (Cockpit_info.ship_index == SHIP_PHOENIX_ID)
+	{
+		float t = (aspect - aspect_5_4) / (aspect_16_9 - aspect_5_4);
+		if (t < 0.0f)
+			t = 0.0f;
+		else if (t > 1.0f)
+			t = 1.0f;
+
+		return max_spread * t + extra_wide_spread * phoenix_extra_wide_scale;
+	}
+	if (Cockpit_info.ship_index == SHIP_MAGNUM_ID)
+		return extra_wide_spread * magnum_extra_wide_scale;
+	if (Cockpit_info.ship_index == SHIP_PYRO_ID ||
+		(Cockpit_info.ship_index >= 0 && Cockpit_info.ship_index < MAX_SHIPS &&
+		 !stricmp(Ships[Cockpit_info.ship_index].name, "Black Pyro")))
+	{
+		return extra_wide_spread * pyro_extra_wide_scale;
+	}
+
+	return 0.0f;
 }
 
 //////////////////////////////////////////////////////////////////////////////

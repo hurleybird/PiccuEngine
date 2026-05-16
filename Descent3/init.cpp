@@ -407,8 +407,6 @@ void SaveGameSettings()
 #endif
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
 	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
-	Database->write("RS_use_terrain_mesh_renderer", Use_terrain_mesh_renderer);
-	Database->write("RS_terrain_renderer_mode", Terrain_renderer_mode);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
 	Database->write("DetailWeaponCoronas",Detail_settings.Weapon_coronas_enabled);
 	Database->write("DetailFog",Detail_settings.Fog_enabled);
@@ -549,8 +547,7 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 	DesiredOpenGLProfile = GLPROFILE_CORE;
 	DesiredOpenGLProfileExplicit = false;
-	Terrain_renderer_mode = TERRAIN_RENDERER_MESH;
-	Use_terrain_mesh_renderer = true;
+	Terrain_renderer_mode = TERRAIN_RENDERER_COMPUTE;
 	Hud_text_scale = 1.0f;
 	PreferredRenderer = RENDERER_NONE;
 
@@ -740,12 +737,6 @@ void LoadGameSettings()
 	Database->read_int("RS_vsync",&Render_preferred_state.vsync_on);
 	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
 	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
-	Database->read("RS_use_terrain_mesh_renderer", &Use_terrain_mesh_renderer);
-	Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
-	Database->read_int("RS_terrain_renderer_mode", &Terrain_renderer_mode);
-	if (Terrain_renderer_mode < TERRAIN_RENDERER_LEGACY || Terrain_renderer_mode > TERRAIN_RENDERER_OFF)
-		Terrain_renderer_mode = Use_terrain_mesh_renderer ? TERRAIN_RENDERER_MESH : TERRAIN_RENDERER_LEGACY;
-	Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
 	if (!DesiredOpenGLProfileExplicit)
@@ -754,13 +745,11 @@ void LoadGameSettings()
 		DesiredOpenGLProfile = GLPROFILE_COMPAT;
 	if (FindArg("-glcore") || FindArg("-gl4") || FindArg("-gl43") || FindArg("-gl3") || FindArg("-openglcore"))
 		DesiredOpenGLProfile = GLPROFILE_CORE;
+	Terrain_renderer_mode = DesiredOpenGLProfile == GLPROFILE_CORE ? TERRAIN_RENDERER_COMPUTE : TERRAIN_RENDERER_LEGACY;
 	if (DesiredOpenGLProfile != GLPROFILE_CORE)
 	{
 		Render_preferred_state.per_pixel_lighting = false;
 		Render_preferred_state.gtao_enabled = false;
-		if (Terrain_renderer_mode != TERRAIN_RENDERER_OFF)
-			Terrain_renderer_mode = TERRAIN_RENDERER_LEGACY;
-		Use_terrain_mesh_renderer = false;
 	}
 
 	if (FindArg ("-vsync"))

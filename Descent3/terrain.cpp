@@ -458,7 +458,6 @@ void DeformTerrainPoint(int x, int z, int change_height)
 
 	tseg->ypos = change_height;
 	tseg->y = tseg->ypos * TERRAIN_HEIGHT_INCREMENT;
-	TerrainMeshMarkDirty();
 
 	int sx = max(0, x - 1);
 	int sz = max(0, z - 1);

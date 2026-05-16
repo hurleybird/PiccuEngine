@@ -396,7 +396,7 @@ void mmInterface::CopyrightText()
 	else if (Program_version.version_type == RELEASE_VERSION)
 		typestr += "Ver ";
 
-	std::string engstr = "Piccu Experiment M3";
+	std::string engstr = "Piccu Experiment M4-pre";
 
 	//Get 7 character hash
 	char hashbuf[8];

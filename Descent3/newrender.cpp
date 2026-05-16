@@ -854,7 +854,6 @@ void NewRender_InitNewLevel()
 		return;
 
 	MeshRooms();
-	MeshTerrain();
 #endif
 }
 

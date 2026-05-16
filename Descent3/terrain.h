@@ -215,13 +215,10 @@ extern ubyte Terrain_from_mine;
 enum terrain_renderer_mode
 {
 	TERRAIN_RENDERER_LEGACY,
-	TERRAIN_RENDERER_MESH,
-	TERRAIN_RENDERER_COMPUTE,
-	TERRAIN_RENDERER_OFF
+	TERRAIN_RENDERER_COMPUTE
 };
 
 extern int Terrain_renderer_mode;
-extern bool Use_terrain_mesh_renderer;
 extern char Terrain_compute_status_text[96];
 
 extern float Last_terrain_render_time;
@@ -285,13 +282,6 @@ extern void ResetTerrain(int force=0);
 extern int GetVisibleTerrain(vector *,matrix *);
 extern void DisplayTerrainList (int,bool from_automap=0);
 extern int CheckToRenderSky (int);
-
-// [ISB] New terrain rendering!
-
-//Called after loading terrain. Will delete all cell meshes and then build new meshes. 
-void MeshTerrain();
-void TerrainMeshMarkDirty();
-
 
 //left,top,right,bot are optional parameters.  Omiting them (or setting them to -1) will
 //render to the whole screen.  Passing valid values will only render tiles visible in the

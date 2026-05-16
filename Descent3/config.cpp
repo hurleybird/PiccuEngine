@@ -130,14 +130,9 @@ static bool ConfigCanUseGTAO()
 	return OpenGLProfile == GLPROFILE_CORE;
 }
 
-static bool ConfigCanUseTerrainMeshRenderer()
-{
-	return OpenGLProfile == GLPROFILE_CORE;
-}
-
 static bool ConfigShowsLegacyTerrainControls()
 {
-	return !ConfigCanUseTerrainMeshRenderer() || Terrain_renderer_mode != TERRAIN_RENDERER_MESH;
+	return OpenGLProfile != GLPROFILE_CORE;
 }
 
 int ConfigNormalizeSupersamplingFactor(int factor)
@@ -1839,7 +1834,6 @@ struct details_menu
 
 	int* detail_level;									// detail level radio
 	int* objcomp;											// object complexity radio
-	int* terrain_mesh;									// terrain renderer radio
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
 		* powerup_halo, * scorches, * weapon_coronas;
@@ -1854,8 +1848,6 @@ struct details_menu
 		int iTemp;
 		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_MEDIUM);
 		parent_menu = menu;
-		const bool can_toggle_terrain_mesh = ConfigCanUseTerrainMeshRenderer();
-		const bool show_legacy_terrain_controls = ConfigShowsLegacyTerrainControls();
 
 		// detail level radio
 		Database->read_int("PredefDetailSetting", &Default_detail_level);
@@ -1882,9 +1874,12 @@ struct details_menu
 		weapon_coronas = sheet->AddLongCheckBox(TXT_CFG_WEAPONEFFECTS, Detail_settings.Weapon_coronas_enabled);
 
 		// sliders
+		tSliderSettings slider_set;
+		const bool show_legacy_terrain_controls = ConfigShowsLegacyTerrainControls();
+		pixel_err = NULL;
+		rend_dist = NULL;
 		if (show_legacy_terrain_controls)
 		{
-			tSliderSettings slider_set;
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
 			iTemp = MAXIMUM_TERRAIN_DETAIL - Detail_settings.Pixel_error - MINIMUM_TERRAIN_DETAIL;
 			if (iTemp < 0) iTemp = 0;
@@ -1900,28 +1895,9 @@ struct details_menu
 			if (iTemp < 0) iTemp = 0;
 			rend_dist = sheet->AddSlider(TXT_RENDDIST, (MAXIMUM_RENDER_DIST - MINIMUM_RENDER_DIST) / 2, iTemp / 2, &slider_set);
 		}
-		else
-		{
-			pixel_err = NULL;
-			rend_dist = NULL;
-		}
-
-		if (can_toggle_terrain_mesh)
-		{
-			sheet->NewGroup("Terrain renderer", 90, show_legacy_terrain_controls ? 87 : 0);
-			terrain_mesh = sheet->AddFirstRadioButton("Legacy");
-			sheet->AddRadioButton("Mesh");
-			sheet->AddRadioButton("Compute");
-			sheet->AddRadioButton("Off");
-			*terrain_mesh = Terrain_renderer_mode;
-		}
-		else
-		{
-			terrain_mesh = NULL;
-		}
 
 		// object complexity radio
-		sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, (show_legacy_terrain_controls || can_toggle_terrain_mesh) ? 174 : 90, show_legacy_terrain_controls ? 87 : 0);
+		sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, show_legacy_terrain_controls ? 174 : 90, show_legacy_terrain_controls ? 87 : 0);
 		objcomp = sheet->AddFirstRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
@@ -1948,11 +1924,6 @@ struct details_menu
 		Detail_settings.Specular_lighting = *specmap;
 		if (rend_dist)
 			Detail_settings.Terrain_render_distance = (((*rend_dist) * 2) + MINIMUM_RENDER_DIST) * ((float)TERRAIN_SIZE);
-		if (terrain_mesh)
-		{
-			Terrain_renderer_mode = *terrain_mesh;
-			Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
-		}
 		Detail_settings.Weapon_coronas_enabled = *weapon_coronas;
 
 		Default_detail_level = *detail_level;
@@ -1978,12 +1949,6 @@ struct details_menu
 			sheet->HasChanged(objcomp) ||
 			(pixel_err && sheet->HasChanged(pixel_err)) ||
 			(rend_dist && sheet->HasChanged(rend_dist));
-
-		if (terrain_mesh && sheet->HasChanged(terrain_mesh))
-		{
-			Terrain_renderer_mode = *terrain_mesh;
-			Use_terrain_mesh_renderer = Terrain_renderer_mode == TERRAIN_RENDERER_MESH;
-		}
 
 		if (changed)
 		{

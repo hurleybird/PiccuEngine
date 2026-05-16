@@ -71,6 +71,7 @@ struct tCockpitInfo
 	poly_model* model;						// model of cockpit.
 	unsigned nonlayered_mask;				// non layered submodel mask
 	unsigned layered_mask;					// layered submodel mask
+	unsigned post_post_mask;					// transparent canopy/glass rendered after post
 	bool animating;							// is cockpit moving?
 	bool resized;								// if cockpit is being resized....
 	vector buffet_vec;						// buffet direction
@@ -86,6 +87,21 @@ struct tCockpitInfo
 };
 
 static tCockpitInfo Cockpit_info;
+struct tCockpitPostPostSnapshot
+{
+	bool valid;
+	int frame_count;
+	vector view_pos;
+	matrix view_tmat;
+	vector light_vec;
+	float light_scalar_r;
+	float light_scalar_g;
+	float light_scalar_b;
+	float normalized_time[MAX_SUBOBJECTS];
+	bool display_adjust_active;
+	float display_spread;
+};
+static tCockpitPostPostSnapshot Cockpit_post_post_snapshot = {};
 float KeyframeAnimateCockpit();
 //	loads cockpit. model_name = NULL, then will not load in model name.
 void LoadCockpitInfo(const char* ckt_file, tCockpitCfgInfo* info);
@@ -139,6 +155,15 @@ static bool CockpitSubmodelUsesTransparentMaterial(poly_model* pm, int submodel)
 	}
 
 	return false;
+}
+
+static bool CockpitSubmodelShouldRenderPostPost(poly_model* pm, int submodel)
+{
+	if (pm->submodel[submodel].flags & (SOF_VIEWER | SOF_MONITOR_MASK))
+		return false;
+	if (pm->submodel[submodel].flags & SOF_LAYER)
+		return true;
+	return CockpitSubmodelUsesTransparentMaterial(pm, submodel);
 }
 
 static void BuildCockpitDisplayAdjustments()
@@ -307,10 +332,17 @@ void InitCockpit(int ship_index)
 	//	find layered submodel mask
 	Cockpit_info.layered_mask = 0x00000000;
 	Cockpit_info.nonlayered_mask = 0x00000000;
+	Cockpit_info.post_post_mask = 0x00000000;
+	Cockpit_post_post_snapshot.valid = false;
 	for (i = 0; i < Cockpit_info.model->n_models; i++)
 	{
 		if ((Cockpit_info.model->submodel[i].flags & SOF_VIEWER) || (Cockpit_info.model->submodel[i].flags & SOF_MONITOR_MASK))
 			continue;
+		if (CockpitSubmodelShouldRenderPostPost(Cockpit_info.model, i))
+		{
+			Cockpit_info.post_post_mask |= (1 << i);
+			continue;
+		}
 		if (Cockpit_info.model->submodel[i].flags & SOF_LAYER)
 			Cockpit_info.layered_mask |= (1 << i);
 		else
@@ -339,6 +371,8 @@ void FreeCockpit()
 	Cockpit_info.state = COCKPIT_STATE_DORMANT;
 	Cockpit_info.display_adjust_count = 0;
 	Cockpit_info.display_adjust_available = false;
+	Cockpit_info.post_post_mask = 0;
+	Cockpit_post_post_snapshot.valid = false;
 	//	free ship specific stuff for hud-cockpit shared.
 	bm_FreeBitmap(HUD_resources.invpulse_bmp);
 	bm_FreeBitmap(HUD_resources.afterburn_bmp);
@@ -618,6 +652,19 @@ void RenderCockpit()
 		Cockpit_info.animating = true;
 		Cockpit_info.buffet_amp = 0.0f;
 	}
+
+	Cockpit_post_post_snapshot.valid = true;
+	Cockpit_post_post_snapshot.frame_count = FrameCount;
+	Cockpit_post_post_snapshot.view_pos = view_pos;
+	Cockpit_post_post_snapshot.view_tmat = view_tmat;
+	Cockpit_post_post_snapshot.light_vec = light_vec;
+	Cockpit_post_post_snapshot.light_scalar_r = light_scalar_r;
+	Cockpit_post_post_snapshot.light_scalar_g = light_scalar_g;
+	Cockpit_post_post_snapshot.light_scalar_b = light_scalar_b;
+	memcpy(Cockpit_post_post_snapshot.normalized_time, normalized_time, sizeof(normalized_time));
+	Cockpit_post_post_snapshot.display_adjust_active = display_adjust_active;
+	Cockpit_post_post_snapshot.display_spread = display_spread;
+
 	//	draws lower z cockpit, and monitor glares after gauge renderering
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
@@ -626,13 +673,47 @@ void RenderCockpit()
 	rend_SetZBufferState(0);
 	RenderGauges(&view_pos, &view_tmat, normalized_time, (Cockpit_info.animating || Cockpit_info.resized), gauge_reset);
 	rend_SetBloomSuppression(0.0f);
-	rend_SetZBufferState(0);
+	rend_SetZBufferWriteMask(1);
+	rend_SetZBufferState(1);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+	rend_SetZBufferState(0);
 
 	if (display_adjust_active)
 		PolymodelClearSubmodelOffsetAdjustments();
 
 	Cockpit_info.resized = false;
+}
+
+bool CockpitHasPostPostElements()
+{
+	return Cockpit_info.model_num > -1 && Cockpit_info.post_post_mask != 0;
+}
+
+void RenderCockpitPostPost()
+{
+	if (!CockpitHasPostPostElements() || !Cockpit_post_post_snapshot.valid ||
+		(Cockpit_post_post_snapshot.frame_count != FrameCount &&
+		 Cockpit_post_post_snapshot.frame_count + 1 != FrameCount))
+	{
+		return;
+	}
+
+	if (Cockpit_post_post_snapshot.display_adjust_active)
+		ApplyCockpitDisplayAdjustments(Cockpit_post_post_snapshot.display_spread);
+
+	rend_SetZBufferWriteMask(0);
+	rend_SetZBufferState(0);
+	DrawPolygonModel(&Cockpit_post_post_snapshot.view_pos, &Cockpit_post_post_snapshot.view_tmat,
+		Cockpit_info.model_num, Cockpit_post_post_snapshot.normalized_time, 0,
+		&Cockpit_post_post_snapshot.light_vec,
+		Cockpit_post_post_snapshot.light_scalar_r,
+		Cockpit_post_post_snapshot.light_scalar_g,
+		Cockpit_post_post_snapshot.light_scalar_b,
+		Cockpit_info.post_post_mask, 0, 1);
+	rend_SetZBufferWriteMask(1);
+
+	if (Cockpit_post_post_snapshot.display_adjust_active)
+		PolymodelClearSubmodelOffsetAdjustments();
 }
 
 //////////////////////////////////////////////////////////////////////////////

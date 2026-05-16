@@ -370,6 +370,10 @@ void rend_CaptureBloomSource();
 // Captures an overlay depth buffer that HBAO can merge into its scene depth source.
 void rend_CaptureHBAODepthOverlay();
 
+bool rend_BeginPostPresentFrame();
+void rend_StartPostPresentFrame(int x1,int y1,int x2,int y2,int clear_flags=RF_CLEAR_ZBUFFER);
+void rend_EndPostPresentFrame();
+
 // Init our renderer, pass the application object also.
 int rend_Init (renderer_type state, oeApplication *app,renderer_preferred_state *pref_state);
 

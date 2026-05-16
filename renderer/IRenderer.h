@@ -229,6 +229,9 @@ public:
 
 	// Flips the surface
 	virtual void Flip() = 0;
+	virtual bool BeginPostPresentFrame() { return false; }
+	virtual void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) {}
+	virtual void EndPostPresentFrame() {}
 
 	// Draws a line using the states of the renderer
 	virtual void DrawSpecialLine(g3Point* p0, g3Point* p1) = 0;

@@ -355,6 +355,12 @@ int GL3Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
+	if (post_present_pending_swap)
+	{
+		StartPostPresentFrame(x1, y1, x2, y2, clear_flags);
+		return;
+	}
+
 	if (framebuffer_ok)
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
 
@@ -375,18 +381,6 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
 		hbao_mask.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
 		hbao_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
-		post_mask.Update(OpenGL_state.screen_width, OpenGL_state.screen_height);
-		if (!post_mask_cleared_this_frame)
-		{
-			post_mask.Clear();
-			post_mask_cleared_this_frame = true;
-			post_hbao_mask_dirty = false;
-			post_bloom_mask_dirty = false;
-		}
-		if (post_mask.HBAOImageTextureForWrite() != 0)
-			glBindImageTexture(0, post_mask.HBAOImageTextureForWrite(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R8);
-		if (post_mask.BloomImageTextureForWrite() != 0)
-			glBindImageTexture(1, post_mask.BloomImageTextureForWrite(), 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R8);
 	}
 	motion_vectors_dirty = false;
 	if (hbao_suppression_draw_value != 0.0f)
@@ -419,6 +413,21 @@ void GL3Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 // Flips the screen
 void GL3Renderer::Flip()
 {
+	if (post_present_pending_swap)
+	{
+		EndPostPresentFrame();
+		return;
+	}
+
+	if (BeginPostPresentFrame())
+		EndPostPresentFrame();
+}
+
+bool GL3Renderer::BeginPostPresentFrame()
+{
+	if (post_present_pending_swap)
+		return true;
+
 #ifdef _DEBUG
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR)
@@ -510,10 +519,8 @@ void GL3Renderer::Flip()
 		}
 	}
 
-	GLuint hbao_mask_texture = post_hbao_mask_dirty ? post_mask.HBAOTextureForRead() : 0;
-	GLuint bloom_mask_texture = post_bloom_mask_dirty ? post_mask.BloomTextureForRead() : 0;
-	if (hbao_mask_texture != 0 || bloom_mask_texture != 0)
-		glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+	GLuint post_protection_mask = hbao_mask_dirty ?
+		hbao_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 
 	if (hbao_enabled)
 	{
@@ -536,7 +543,7 @@ void GL3Renderer::Flip()
 		GLuint hbao_depth_overlay_texture = hbao_depth_overlay_valid ?
 			hbao_depth_overlay_framebuffer.DepthTextureRaw() : 0;
 		hbao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-			OpenGL_state, last_projection, near_z, far_z, motion_texture, hbao_mask_texture,
+			OpenGL_state, last_projection, near_z, far_z, motion_texture, post_protection_mask,
 			hbao_depth_overlay_texture,
 			have_current_inverse_view_projection ? current_inverse_view_projection : nullptr,
 			previous_view_projection,
@@ -549,19 +556,19 @@ void GL3Renderer::Flip()
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
 		OpenGL_preferred_state, OpenGL_state, display_gamma,
-		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, bloom_mask_texture);
+		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, post_protection_mask);
 	if (bloom_framebuffer)
 	{
 		bloom.compositeshader.Use();
 		glUniform1f(bloom.composite_gamma, display_gamma);
 		glUniform1f(bloom.composite_intensity, OpenGL_preferred_state.bloom_intensity);
 		glUniform1i(bloom.composite_use_alpha_mask, 0);
-		glUniform1i(bloom.composite_use_protection_mask, bloom_mask_texture != 0 ? 1 : 0);
+		glUniform1i(bloom.composite_use_protection_mask, post_protection_mask != 0 ? 1 : 0);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
-		if (bloom_mask_texture != 0)
-			GL_BindFramebufferTexture(bloom_mask_texture, 3, GL_NEAREST);
+		if (post_protection_mask != 0)
+			GL_BindFramebufferTexture(post_protection_mask, 3, GL_NEAREST);
 		{
 			PERF_MARKER_SCOPE("Bloom.Composite");
 			GL_DrawFramebufferQuad(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h);
@@ -592,7 +599,55 @@ void GL3Renderer::Flip()
 		Int3();
 	}
 #endif
+	post_present_pending_swap = true;
+	return true;
+}
 
+void GL3Renderer::StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
+{
+	UpdatePresentRect();
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK);
+
+	GLenum glclearflags = 0;
+	if (clear_flags & RF_CLEAR_ZBUFFER)
+		glclearflags |= GL_DEPTH_BUFFER_BIT;
+	if (clear_flags & RF_CLEAR_COLOR)
+	{
+		glClearColor(0.0, 0.0, 0.0, 1.0);
+		glclearflags |= GL_COLOR_BUFFER_BIT;
+	}
+	if (glclearflags != 0)
+		glClear(glclearflags);
+
+	glDisable(GL_MULTISAMPLE);
+	OpenGL_state.clip_x1 = x1;
+	OpenGL_state.clip_y1 = y1;
+	OpenGL_state.clip_x2 = x2;
+	OpenGL_state.clip_y2 = y2;
+
+	float projection[16];
+	GL_Ortho(projection, 0, x2 - x1, y2 - y1, 0, 0, 1);
+	UpdateLegacyBlock(projection, mat4_identity);
+
+	const int game_width = OpenGL_state.screen_width > 0 ? OpenGL_state.screen_width : (x2 - x1);
+	const int game_height = OpenGL_state.screen_height > 0 ? OpenGL_state.screen_height : (y2 - y1);
+	const float scale_x = game_width > 0 ? (float)framebuffer_blit_w / (float)game_width : 1.0f;
+	const float scale_y = game_height > 0 ? (float)framebuffer_blit_h / (float)game_height : 1.0f;
+	const int phys_x1 = (int)floorf((float)x1 * scale_x + 0.5f);
+	const int phys_x2 = (int)floorf((float)x2 * scale_x + 0.5f);
+	const int phys_y1 = (int)floorf((float)y1 * scale_y + 0.5f);
+	const int phys_y2 = (int)floorf((float)y2 * scale_y + 0.5f);
+	glViewport((GLint)framebuffer_blit_x + phys_x1,
+		(GLint)framebuffer_blit_y + (GLint)framebuffer_blit_h - phys_y2,
+		std::max(1, phys_x2 - phys_x1),
+		std::max(1, phys_y2 - phys_y1));
+}
+
+void GL3Renderer::EndPostPresentFrame()
+{
 #if defined(SDL3)
 	SDL_GL_SwapWindow(GLWindow);
 #elif defined(WIN32)
@@ -611,12 +666,11 @@ void GL3Renderer::Flip()
 	bloom_source_valid = false;
 	hbao_depth_overlay_valid = false;
 	hbao_scene_valid = false;
-	post_mask_cleared_this_frame = false;
-	post_hbao_mask_dirty = false;
-	post_bloom_mask_dirty = false;
+	hbao_mask_dirty = false;
+	post_present_pending_swap = false;
 
 #ifdef _DEBUG
-	err = glGetError();
+	GLenum err = glGetError();
 	if (err != GL_NO_ERROR)
 	{
 		Int3();
@@ -1140,7 +1194,6 @@ void GL3Renderer::SetHBAOSuppression(float value)
 	if (hbao_suppression_draw_value > 0.0f)
 	{
 		hbao_mask_dirty = true;
-		post_hbao_mask_dirty = true;
 	}
 }
 
@@ -1151,7 +1204,7 @@ void GL3Renderer::SetBloomSuppression(float value)
 		legacy_draw_uniforms_dirty = true;
 	bloom_suppression_draw_value = clamped_value;
 	if (bloom_suppression_draw_value > 0.0f)
-		post_bloom_mask_dirty = true;
+		hbao_mask_dirty = true;
 }
 
 // Sets the overall alpha scale factor (all alpha values are scaled by this value)
@@ -1405,7 +1458,6 @@ void GL3Renderer::UpdateFramebuffer(void)
 		hbao_composite_framebuffer.Destroy();
 		motion_vectors.Destroy();
 		hbao_mask.Destroy();
-		post_mask.Destroy();
 	}
 	hbao.DestroyFramebuffers();
 
@@ -1432,11 +1484,6 @@ void GL3Renderer::UpdateFramebuffer(void)
 	bloom_source_valid = false;
 	hbao_depth_overlay_valid = false;
 	hbao_scene_valid = false;
-	post_mask.Update(OpenGL_state.screen_width, OpenGL_state.screen_height);
-	post_mask.Clear();
-	post_mask_cleared_this_frame = false;
-	post_hbao_mask_dirty = false;
-	post_bloom_mask_dirty = false;
 	legacy_draw_uniforms_dirty = true;
 
 	framebuffer_current_draw = 0;
@@ -1473,10 +1520,6 @@ void GL3Renderer::CloseFramebuffer(void)
 	hbao_scene_valid = false;
 	motion_vectors.Destroy();
 	hbao_mask.Destroy();
-	post_mask.Destroy();
-	post_mask_cleared_this_frame = false;
-	post_hbao_mask_dirty = false;
-	post_bloom_mask_dirty = false;
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

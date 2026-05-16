@@ -27,6 +27,8 @@ struct bsp_info;
 
 //	renders the cockpit.
 void RenderCockpit();
+bool CockpitHasPostPostElements();
+void RenderCockpitPostPost();
 
 //	initialization of cockpit information.
 void InitCockpit(int ship_index);

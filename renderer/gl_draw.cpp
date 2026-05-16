@@ -419,8 +419,6 @@ void GL3Renderer::SetDrawDefaults()
 		drawshader_dynamic_directional_uniforms[i] = drawshaders[i].FindUniform("dynamic_light_directional[0]");
 		drawshader_hbao_suppression_uniforms[i] = drawshaders[i].FindUniform("hbao_suppression");
 		drawshader_bloom_suppression_uniforms[i] = drawshaders[i].FindUniform("bloom_suppression");
-		drawshader_post_mask_enabled_uniforms[i] = drawshaders[i].FindUniform("post_mask_enabled");
-		drawshader_post_mask_scale_uniforms[i] = drawshaders[i].FindUniform("post_mask_scale");
 	}
 
 	lastdrawshader = -1;
@@ -512,11 +510,6 @@ void GL3Renderer::SelectDrawShader()
 		glUniform1f(drawshader_hbao_suppression_uniforms[shader_index], hbao_suppression_draw_value);
 	if (drawshader_bloom_suppression_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_bloom_suppression_uniforms[shader_index], bloom_suppression_draw_value);
-	if (drawshader_post_mask_enabled_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_post_mask_enabled_uniforms[shader_index],
-			(post_mask.HBAOTextureForRead() != 0 && post_mask.BloomTextureForRead() != 0) ? 1 : 0);
-	if (drawshader_post_mask_scale_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_post_mask_scale_uniforms[shader_index], SupersamplingFactor());
 
 	const bool phong_enabled = OpenGL_state.cur_light_state == LS_PHONG;
 	if (drawshader_phong_enabled_uniforms[shader_index] != -1)

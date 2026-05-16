@@ -253,6 +253,30 @@ void rend_CaptureHBAODepthOverlay()
 	renderer_inst->CaptureHBAODepthOverlay();
 }
 
+bool rend_BeginPostPresentFrame()
+{
+	if (!Renderer_initted)
+		return false;
+
+	return renderer_inst->BeginPostPresentFrame();
+}
+
+void rend_StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->StartPostPresentFrame(x1, y1, x2, y2, clear_flags);
+}
+
+void rend_EndPostPresentFrame()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->EndPostPresentFrame();
+}
+
 // Draws a scaled 2d bitmap to our buffer
 // NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color
 void rend_DrawScaledBitmap(int x1, int y1, int x2, int y2, int bm, float u0, float v0, float u1, float v1, int color, float* alphas)

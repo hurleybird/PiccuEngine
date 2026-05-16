@@ -94,12 +94,11 @@ class GL3Renderer : public IRenderer
 	Framebuffer hbao_composite_framebuffer;
 	MotionVectorResources motion_vectors;
 	HBAOMaskResources hbao_mask;
-	NativePostMaskResources post_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
 	bool hbao_depth_overlay_valid = false;
 	bool hbao_scene_valid = false;
-	bool post_mask_cleared_this_frame = false;
+	bool post_present_pending_swap = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
@@ -168,15 +167,11 @@ class GL3Renderer : public IRenderer
 	GLint drawshader_dynamic_directional_uniforms[8] = {};
 	GLint drawshader_hbao_suppression_uniforms[8] = {};
 	GLint drawshader_bloom_suppression_uniforms[8] = {};
-	GLint drawshader_post_mask_enabled_uniforms[8] = {};
-	GLint drawshader_post_mask_scale_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float hbao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	bool hbao_mask_dirty = false;
-	bool post_hbao_mask_dirty = false;
-	bool post_bloom_mask_dirty = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
 	vector per_pixel_dynamic_face_normal = { 0, 0, 1 };
 	int per_pixel_dynamic_light_count = 0;
@@ -523,6 +518,9 @@ public:
 
 	// Flips the surface
 	void Flip() override;
+	bool BeginPostPresentFrame() override;
+	void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) override;
+	void EndPostPresentFrame() override;
 
 	// Draws a line using the states of the renderer
 	void DrawSpecialLine(g3Point* p0, g3Point* p1) override;

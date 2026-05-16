@@ -2257,6 +2257,23 @@ void GameDrawHud()
 	}
 }
 
+static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
+{
+	const bool draw_cockpit = !HUD_disabled && CockpitHasPostPostElements();
+	if (!force_backbuffer_frame && !draw_cockpit)
+		return;
+
+	PERF_MARKER_SCOPE("GameDrawPostPresentFrame");
+	rend_StartPostPresentFrame(0, 0, Max_window_w, Max_window_h, RF_CLEAR_ZBUFFER);
+	if (draw_cockpit)
+	{
+		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, HUD_RENDER_ZOOM);
+		RenderCockpitPostPost();
+		g3_EndFrame();
+	}
+	rend_EndFrame();
+}
+
 //Draw a frame of the game
 void GameRenderFrame(void)
 {
@@ -2902,6 +2919,14 @@ void GameFrame(void)
 		//Render the frame
 		GameRenderFrame();
 
+	if (!Skip_render_game_frame && !Dedicated_server && (Game_interface_mode != GAME_INTERFACE || Menu_interface_mode))
+	{
+		if (rend_BeginPostPresentFrame())
+		{
+			GameDrawPostPresentFrame(true);
+		}
+	}
+
 	RTP_tENDTIME(renderframe_time, curr_time);
 
 	if (!Game_paused)
@@ -2918,7 +2943,15 @@ void GameFrame(void)
 			if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
 			{
 				PERF_MARKER_SCOPE("Renderer.Flip");
-				rend_Flip();
+				if (rend_BeginPostPresentFrame())
+				{
+					GameDrawPostPresentFrame(false);
+					rend_EndPostPresentFrame();
+				}
+				else
+				{
+					rend_Flip();
+				}
 			}
 		}
 		PerfMarkersEndFrame();

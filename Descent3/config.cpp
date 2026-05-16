@@ -67,6 +67,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <math.h>
 
 #define STAT_SCORE STAT_TIMER
 
@@ -922,6 +923,130 @@ static void ApplyGTAOPresetFromIndex(int index)
 		Render_preferred_state.gtao_enabled = false;
 		if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
 			Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+		break;
+	}
+}
+
+extern ubyte Use_motion_blur;
+extern float Legacy_motion_blur_frame_time;
+extern float Legacy_motion_blur_sphere_size_percent;
+extern float Legacy_motion_blur_copy_density;
+extern int Legacy_motion_blur_max_iterations;
+extern float Legacy_motion_blur_alpha_scale;
+extern float Legacy_motion_blur_alpha_exponent;
+
+enum
+{
+	MOTION_BLUR_UI_OFF = 0,
+	MOTION_BLUR_UI_LOW = 1,
+	MOTION_BLUR_UI_MED = 2,
+	MOTION_BLUR_UI_HIGH = 3
+};
+
+static float ClampLegacyMotionBlurFrameTime(float frame_time)
+{
+	if (frame_time < 0.001f)
+		return 0.001f;
+	if (frame_time > 0.5f)
+		return 0.5f;
+	return frame_time;
+}
+
+static float ClampLegacyMotionBlurSphereSize(float sphere_size)
+{
+	if (sphere_size < 0.01f)
+		return 0.01f;
+	if (sphere_size > 2.0f)
+		return 2.0f;
+	return sphere_size;
+}
+
+static float ClampLegacyMotionBlurCopyDensity(float density)
+{
+	if (density < 0.0f)
+		return 0.0f;
+	if (density > 8.0f)
+		return 8.0f;
+	return density;
+}
+
+static int ClampLegacyMotionBlurIterations(int iterations)
+{
+	if (iterations < 1)
+		return 1;
+	if (iterations > 64)
+		return 64;
+	return iterations;
+}
+
+static float ClampLegacyMotionBlurAlphaScale(float scale)
+{
+	if (scale < 0.0f)
+		return 0.0f;
+	if (scale > 4.0f)
+		return 4.0f;
+	return scale;
+}
+
+static float ClampLegacyMotionBlurAlphaExponent(float exponent)
+{
+	if (exponent < 0.1f)
+		return 0.1f;
+	if (exponent > 8.0f)
+		return 8.0f;
+	return exponent;
+}
+
+static bool MotionBlurLegacyMatchesPreset(float copy_density, int max_iterations, float alpha_exponent)
+{
+	return fabs(Legacy_motion_blur_frame_time - (1.0f / 20.0f)) < 0.0001f &&
+		fabs(Legacy_motion_blur_sphere_size_percent - 0.20f) < 0.0001f &&
+		fabs(Legacy_motion_blur_copy_density - copy_density) < 0.0001f &&
+		Legacy_motion_blur_max_iterations == max_iterations &&
+		fabs(Legacy_motion_blur_alpha_scale - 1.0f) < 0.0001f &&
+		fabs(Legacy_motion_blur_alpha_exponent - alpha_exponent) < 0.0001f;
+}
+
+static int MotionBlurPresetToIndex()
+{
+	if (!Use_motion_blur)
+		return MOTION_BLUR_UI_OFF;
+	if (MotionBlurLegacyMatchesPreset(1.0f, 12, 1.0f))
+		return MOTION_BLUR_UI_LOW;
+	if (MotionBlurLegacyMatchesPreset(2.0f, 24, 1.5f))
+		return MOTION_BLUR_UI_MED;
+	if (MotionBlurLegacyMatchesPreset(3.0f, 36, 2.0f))
+		return MOTION_BLUR_UI_HIGH;
+	return MOTION_BLUR_UI_LOW;
+}
+
+static void ApplyLegacyMotionBlurValues(float copy_density, int max_iterations, float alpha_exponent)
+{
+	Use_motion_blur = 1;
+	Legacy_motion_blur_frame_time = 1.0f / 20.0f;
+	Legacy_motion_blur_sphere_size_percent = 0.20f;
+	Legacy_motion_blur_copy_density = copy_density;
+	Legacy_motion_blur_max_iterations = max_iterations;
+	Legacy_motion_blur_alpha_scale = 1.0f;
+	Legacy_motion_blur_alpha_exponent = alpha_exponent;
+}
+
+static void ApplyMotionBlurPresetFromIndex(int index)
+{
+	switch (index)
+	{
+	case MOTION_BLUR_UI_LOW:
+		ApplyLegacyMotionBlurValues(1.0f, 12, 1.0f);
+		break;
+	case MOTION_BLUR_UI_MED:
+		ApplyLegacyMotionBlurValues(2.0f, 24, 1.5f);
+		break;
+	case MOTION_BLUR_UI_HIGH:
+		ApplyLegacyMotionBlurValues(3.0f, 36, 2.0f);
+		break;
+	case MOTION_BLUR_UI_OFF:
+	default:
+		Use_motion_blur = 0;
 		break;
 	}
 }
@@ -1834,6 +1959,7 @@ struct details_menu
 
 	int* detail_level;									// detail level radio
 	int* objcomp;											// object complexity radio
+	int* motion_blur;									// motion blur radio
 	bool* specmap, * headlight, * mirror,				// check boxes
 		* dynamic, * fog, * coronas, * procedurals,
 		* powerup_halo, * scorches, * weapon_coronas;
@@ -1846,7 +1972,7 @@ struct details_menu
 	newuiSheet* setup(newuiMenu* menu)
 	{
 		int iTemp;
-		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_MEDIUM);
+		sheet = menu->AddOption(IDV_DCONFIG, TXT_OPTDETAIL, NEWUIMENU_LARGE);
 		parent_menu = menu;
 
 		// detail level radio
@@ -1878,6 +2004,7 @@ struct details_menu
 		const bool show_legacy_terrain_controls = ConfigShowsLegacyTerrainControls();
 		pixel_err = NULL;
 		rend_dist = NULL;
+		motion_blur = NULL;
 		if (show_legacy_terrain_controls)
 		{
 			sheet->NewGroup(TXT_GEOMETRY, 90, 0);
@@ -1897,12 +2024,27 @@ struct details_menu
 		}
 
 		// object complexity radio
-		sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, show_legacy_terrain_controls ? 174 : 90, show_legacy_terrain_controls ? 87 : 0);
+		if (show_legacy_terrain_controls)
+		{
+			sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 174, 87);
+			sheet->NewGroup(NULL, 174, 97);
+		}
+		else
+		{
+			sheet->NewGroup(TXT_CFG_OBJECTCOMPLEXITY, 90, 0);
+		}
 		objcomp = sheet->AddFirstRadioButton(TXT_LOW);
 		sheet->AddRadioButton(TXT_CFG_MEDIUM);
 		sheet->AddRadioButton(TXT_CFG_HIGH);
 		sheet->AddRadioButton(TXT_CFG_MAX);
 		*objcomp = Detail_settings.Object_complexity;
+
+		sheet->NewGroup("Motion Blur", show_legacy_terrain_controls ? 174 : 198, show_legacy_terrain_controls ? 152 : 0);
+		motion_blur = sheet->AddFirstRadioButton(TXT_OFF);
+		sheet->AddRadioButton(TXT_LOW);
+		sheet->AddRadioButton(TXT_CFG_MEDIUM);
+		sheet->AddRadioButton(TXT_CFG_HIGH);
+		*motion_blur = MotionBlurPresetToIndex();
 
 		return sheet;
 	};
@@ -1916,6 +2058,8 @@ struct details_menu
 		Detail_settings.Fog_enabled = *fog;
 		Detail_settings.Mirrored_surfaces = *mirror;
 		Detail_settings.Object_complexity = *objcomp;
+		if (motion_blur)
+			ApplyMotionBlurPresetFromIndex(*motion_blur);
 		if (pixel_err)
 			Detail_settings.Pixel_error = MAXIMUM_TERRAIN_DETAIL - ((*pixel_err) + MINIMUM_TERRAIN_DETAIL);
 		Detail_settings.Powerup_halos = *powerup_halo;
@@ -1935,6 +2079,11 @@ struct details_menu
 	// process output and do stuff accordintly
 	void process(int res)
 	{
+		if (motion_blur && sheet->HasChanged(motion_blur))
+		{
+			ApplyMotionBlurPresetFromIndex(*motion_blur);
+		}
+
 		// check here if the detail level currently set should be custom
 		bool changed = sheet->HasChanged(specmap) ||
 			sheet->HasChanged(headlight) ||

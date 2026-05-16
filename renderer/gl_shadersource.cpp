@@ -127,6 +127,10 @@ const char* downsampleFragmentSrc =
 "";
 
 const char* bloomThresholdFragmentSrc =
+// Bloom downsample and merge filter structure is adapted from The Force Engine
+// (https://github.com/luciusDXL/TheForceEngine), GPL-2.0. Piccu's source
+// extraction differs: it thresholds the resolved scene color instead of using
+// TFE's generated emissive/material mask.
 "#version 450 core\n"
 "\n"
 "in vec2 outuv;\n"

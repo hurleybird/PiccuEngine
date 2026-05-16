@@ -50,6 +50,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #ifdef EDITOR
 #include "editor\d3edit.h"
@@ -66,6 +67,12 @@
 #define RO_LIGHTMAPS	2
 
 extern ubyte Use_motion_blur;
+float Legacy_motion_blur_frame_time = 1.0f / 20.0f;
+float Legacy_motion_blur_sphere_size_percent = 0.20f;
+float Legacy_motion_blur_copy_density = 1.0f;
+int Legacy_motion_blur_max_iterations = 12;
+float Legacy_motion_blur_alpha_scale = 1.0f;
+float Legacy_motion_blur_alpha_exponent = 1.0f;
 ubyte RenderObjectType = RO_STATIC;
 float RenderObjectStaticRedValue = 1.0f;
 float RenderObjectStaticGreenValue = 1.0f;
@@ -77,6 +84,12 @@ vector RenderObject_LightDirection;
 
 float Last_powerup_sparkle_time = 0.0f;
 bool Render_powerup_sparkles = false;
+
+static bool RenderObject_IsLegacyMotionBlurEligible(const object* obj)
+{
+	return (obj->type == OBJ_ROBOT || obj->type == OBJ_DEBRIS) &&
+		Object_map_position_history[OBJNUM(obj)] != -1;
+}
 
 static double Render_object_perf_first_time = 0.0;
 static double Render_object_perf_total_time = 0.0;
@@ -1097,19 +1110,30 @@ void RenderObject(object* obj)
 
 		////////////////////////////////////////////
 		/////////////MOTION BLUR////////////////////
-		if (Use_motion_blur && (obj->type == OBJ_ROBOT || obj->type == OBJ_DEBRIS) && Object_map_position_history[OBJNUM(obj)] != -1)
+		if (Use_motion_blur && RenderObject_IsLegacyMotionBlurEligible(obj))
 		{
 			double motion_blur_start_time = perf_scope.IsActive() ? PerfMarkersNow() : 0.0;
 			float vel_mag;	//velocity magnitude
-			float sphere_size_perc = 0.20f;	// percentage of object size
-			float AFT = 1.0f / 20.0f;	//Assumed frame time
+			float sphere_size_perc = Legacy_motion_blur_sphere_size_percent;	// percentage of object size
+			float copy_density = Legacy_motion_blur_copy_density;
+			float AFT = Legacy_motion_blur_frame_time;	//Assumed frame time
 			int num_iterations;	//number of iterations
 
+			if (sphere_size_perc < 0.01f)
+				sphere_size_perc = 0.01f;
+			if (copy_density < 0.0f)
+				copy_density = 0.0f;
+			if (copy_density > 8.0f)
+				copy_density = 8.0f;
+			if (AFT < 0.001f)
+				AFT = 0.001f;
 			vel_mag = fabs(vm_GetMagnitude(&obj->mtype.phys_info.velocity));
-			num_iterations = (vel_mag * AFT) / (sphere_size_perc * obj->size);
+			num_iterations = (vel_mag * AFT * copy_density) / (sphere_size_perc * obj->size);
 
-			if (num_iterations > 12)
-				num_iterations = 12;
+			if (num_iterations > Legacy_motion_blur_max_iterations)
+				num_iterations = Legacy_motion_blur_max_iterations;
+			if (num_iterations < 0)
+				num_iterations = 0;
 
 			if (num_iterations >= 1)
 			{
@@ -1160,7 +1184,17 @@ void RenderObject(object* obj)
 					if (!GetLinearPosition(positions, times, MAX_POSITION_HISTORY + 1, curr_t, &obj->pos))
 						break;
 
-					rend_SetAlphaFactor(curr_alpha);
+					float alpha = curr_alpha;
+					if (alpha < 0.0f)
+						alpha = 0.0f;
+					float alpha_exponent = Legacy_motion_blur_alpha_exponent;
+					if (alpha_exponent < 0.1f)
+						alpha_exponent = 0.1f;
+					alpha = Legacy_motion_blur_alpha_scale *
+						powf(alpha, alpha_exponent);
+					if (alpha > 1.0f)
+						alpha = 1.0f;
+					rend_SetAlphaFactor(alpha);
 
 					// render the iteration
 					if (obj->rtype.pobj_info.anim_frame || (Poly_models[obj->rtype.pobj_info.model_num].frame_max != Poly_models[obj->rtype.pobj_info.model_num].frame_min))

@@ -146,6 +146,12 @@ extern float Sound_doppler_level;
 extern bool Sound_hrtf;
 
 extern bool Mem_superlow_memory_mode;
+extern float Legacy_motion_blur_frame_time;
+extern float Legacy_motion_blur_sphere_size_percent;
+extern float Legacy_motion_blur_copy_density;
+extern int Legacy_motion_blur_max_iterations;
+extern float Legacy_motion_blur_alpha_scale;
+extern float Legacy_motion_blur_alpha_exponent;
 
 const float kDefaultMouselookSensitivity = 9.102f;
 const float kAnglesPerDegree             = 65536.0f / 360.0f;
@@ -385,6 +391,14 @@ void SaveGameSettings()
 	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
+	tempint = Use_motion_blur ? 1 : 0;
+	Database->write("RS_motion_blur_type", tempint);
+	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
+	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_sphere_percent", Legacy_motion_blur_sphere_size_percent);
+	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_copy_density", Legacy_motion_blur_copy_density);
+	Database->write("RS_legacy_motion_blur_max_iterations", Legacy_motion_blur_max_iterations);
+	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_alpha_scale", Legacy_motion_blur_alpha_scale);
+	WRITE_FLOAT_SETTING("RS_legacy_motion_blur_alpha_exponent", Legacy_motion_blur_alpha_exponent);
 
 	Database->write("Dynamic_Lighting",Detail_settings.Dynamic_lighting);
 
@@ -502,6 +516,8 @@ void LoadGameSettings()
 	char tempbuffer[TEMPBUFFERSIZE],*stoptemp;
 	int templen = TEMPBUFFERSIZE;
 	int tempint;
+	int saved_motion_blur_type = 0;
+	bool saved_motion_blur_type_present = false;
 
 #define READ_FLOAT_SETTING(name, value) \
 	do { \
@@ -730,6 +746,30 @@ void LoadGameSettings()
 	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
+	saved_motion_blur_type = 0;
+	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);
+	if (saved_motion_blur_type < 0) saved_motion_blur_type = 0;
+	if (saved_motion_blur_type > 1) saved_motion_blur_type = 1;
+	READ_FLOAT_SETTING("RS_legacy_motion_blur_frame_time", Legacy_motion_blur_frame_time);
+	if (Legacy_motion_blur_frame_time < 0.001f) Legacy_motion_blur_frame_time = 0.001f;
+	if (Legacy_motion_blur_frame_time > 0.5f) Legacy_motion_blur_frame_time = 0.5f;
+	READ_FLOAT_SETTING("RS_legacy_motion_blur_sphere_percent", Legacy_motion_blur_sphere_size_percent);
+	if (Legacy_motion_blur_sphere_size_percent < 0.01f) Legacy_motion_blur_sphere_size_percent = 0.01f;
+	if (Legacy_motion_blur_sphere_size_percent > 2.0f) Legacy_motion_blur_sphere_size_percent = 2.0f;
+	READ_FLOAT_SETTING("RS_legacy_motion_blur_copy_density", Legacy_motion_blur_copy_density);
+	if (Legacy_motion_blur_copy_density < 0.0f) Legacy_motion_blur_copy_density = 0.0f;
+	if (Legacy_motion_blur_copy_density > 8.0f) Legacy_motion_blur_copy_density = 8.0f;
+	tempint = Legacy_motion_blur_max_iterations;
+	Database->read_int("RS_legacy_motion_blur_max_iterations", &tempint);
+	if (tempint < 1) tempint = 1;
+	if (tempint > 64) tempint = 64;
+	Legacy_motion_blur_max_iterations = tempint;
+	READ_FLOAT_SETTING("RS_legacy_motion_blur_alpha_scale", Legacy_motion_blur_alpha_scale);
+	if (Legacy_motion_blur_alpha_scale < 0.0f) Legacy_motion_blur_alpha_scale = 0.0f;
+	if (Legacy_motion_blur_alpha_scale > 4.0f) Legacy_motion_blur_alpha_scale = 4.0f;
+	READ_FLOAT_SETTING("RS_legacy_motion_blur_alpha_exponent", Legacy_motion_blur_alpha_exponent);
+	if (Legacy_motion_blur_alpha_exponent < 0.1f) Legacy_motion_blur_alpha_exponent = 0.1f;
+	if (Legacy_motion_blur_alpha_exponent > 8.0f) Legacy_motion_blur_alpha_exponent = 8.0f;
 	// force feedback stuff
 	Database->read("EnableJoystickFF",&D3Use_force_feedback);
 	Database->read("ForceFeedbackAutoCenter",&D3Force_auto_center);
@@ -859,14 +899,12 @@ void LoadGameSettings()
 	ConfigSetDetailLevel(level);
 
 	// Motion blur
-	Use_motion_blur = 0;
-	if(Katmai || FindArg("-motionblur"))
-	{	
-		if(!FindArg("-nomotionblur"))
-		{
-			Use_motion_blur = 1;
-		}
-	}
+	Use_motion_blur = 1;
+	const bool no_motion_blur = FindArg("-nomotionblur") != 0;
+	if (saved_motion_blur_type_present)
+		Use_motion_blur = saved_motion_blur_type != 0;
+	if(no_motion_blur)
+		Use_motion_blur = 0;
 
 	Render_powerup_sparkles = false;
 	if(Katmai && !FindArg("-nosparkles"))

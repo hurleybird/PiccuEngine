@@ -21,47 +21,62 @@
 #include "rtperformance.h"
 #include <math.h>
 
-#if defined(WIN32) && !defined(SDL3)
-typedef HRESULT(WINAPI* DwmFlushProc)();
-
-static DwmFlushProc GetDwmFlushProc()
-{
-	static bool tried_load = false;
-	static DwmFlushProc proc = nullptr;
-
-	if (!tried_load)
-	{
-		tried_load = true;
-		HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
-		if (dwmapi)
-			proc = (DwmFlushProc)GetProcAddress(dwmapi, "DwmFlush");
-	}
-
-	return proc;
-}
-
-static void FlushDwmForVSync()
-{
-	DwmFlushProc proc = GetDwmFlushProc();
-	if (!proc)
-		return;
-
-	static bool logged_failure = false;
-	HRESULT result = proc();
-	if (FAILED(result) && !logged_failure)
-	{
-		logged_failure = true;
-		mprintf((0, "DwmFlush failed with 0x%08lx; falling back to WGL swap interval only.\n",
-			(unsigned long)result));
-	}
-}
-#endif
-
 static float mat4_identity[16] =
 { 1, 0, 0, 0,
 	0, 1, 0, 0,
 	0, 0, 1, 0,
 	0, 0, 0, 1 };
+
+static void GL4PerfGpuDrain(const char* marker_name)
+{
+	(void)marker_name;
+}
+
+static void GL4PerfFramebufferState(const char* phase, const Framebuffer& framebuffer,
+	int slot, int ssaa_factor)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.%s slot=%d %ux%u req=%u actual=%u ssaa=%d",
+		phase, slot, (unsigned)framebuffer.Width(), (unsigned)framebuffer.Height(),
+		(unsigned)framebuffer.RequestedSamples(), (unsigned)framebuffer.Samples(),
+		ssaa_factor);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL4PerfMsaaStageState(const char* phase, int frames_remaining, int target_samples)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.MSAAStage.%s remaining=%d target=%d",
+		phase, frames_remaining, target_samples);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL4PerfPresentState(const char* phase, int framebuffer_slot, bool post_present_pending)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	int swap_interval = -999;
+#if defined(SDL3)
+	swap_interval = SDL_GL_GetSwapInterval();
+#elif defined(WIN32)
+	if (dwglGetSwapIntervalEXT)
+		swap_interval = dwglGetSwapIntervalEXT();
+#endif
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.Present.%s swap_interval=%d slot=%d post_pending=%d",
+		phase, swap_interval, framebuffer_slot, post_present_pending ? 1 : 0);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static constexpr int MSAA_DOWNSHIFT_RELEASE_FRAMES = 4;
 
 static float OpenGL_terrain_fog_start = 0.0f;
 static float OpenGL_terrain_fog_end = 1.0f;
@@ -286,8 +301,26 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 {
 	int retval = 1;
 	renderer_preferred_state old_state = OpenGL_preferred_state;
+	int old_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(old_state));
+	int new_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(*pref_state));
+	const bool staged_msaa_transition =
+		old_msaa_samples != 0 && new_msaa_samples != 0 && old_msaa_samples != new_msaa_samples;
+	const bool keep_deferred_msaa_transition =
+		msaa_deferred_preferred_state_valid && msaa_downshift_release_frames > 0 && new_msaa_samples != 0;
+	renderer_preferred_state applied_state = *pref_state;
+	if (staged_msaa_transition || keep_deferred_msaa_transition)
+	{
+		msaa_deferred_preferred_state = *pref_state;
+		msaa_deferred_preferred_state_valid = true;
+		applied_state.msaa_samples = 0;
+		applied_state.antialised = false;
+	}
+	else
+	{
+		msaa_deferred_preferred_state_valid = false;
+	}
 
-	OpenGL_preferred_state = *pref_state;
+	OpenGL_preferred_state = applied_state;
 	if (OpenGL_state.initted)
 	{
 		int reinit = 0;
@@ -313,6 +346,26 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			|| pref_state->fullscreen != old_state.fullscreen || pref_state->antialised != old_state.antialised
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
 			|| pref_state->msaa_samples != old_state.msaa_samples;
+		if (pref_state->msaa_samples != old_state.msaa_samples ||
+			pref_state->supersampling_factor != old_state.supersampling_factor ||
+			pref_state->bloom_enabled != old_state.bloom_enabled ||
+			pref_state->gtao_enabled != old_state.gtao_enabled)
+		{
+			mprintf((0, "GL4 SetPreferredState: msaa %u->%u aa %d->%d ssaa %u->%u bloom %d->%d gtao %d->%d.\n",
+				(unsigned)old_state.msaa_samples, (unsigned)pref_state->msaa_samples,
+				old_state.antialised ? 1 : 0, pref_state->antialised ? 1 : 0,
+				(unsigned)old_state.supersampling_factor, (unsigned)pref_state->supersampling_factor,
+				old_state.bloom_enabled ? 1 : 0, pref_state->bloom_enabled ? 1 : 0,
+				old_state.gtao_enabled ? 1 : 0, pref_state->gtao_enabled ? 1 : 0));
+		}
+		if (staged_msaa_transition)
+		{
+			msaa_downshift_release_frames = MSAA_DOWNSHIFT_RELEASE_FRAMES;
+			msaa_forced_off_target_samples = new_msaa_samples;
+			msaa_forced_off_scene_presented = false;
+			mprintf((0, "GL4 MSAA transition: forcing preferred %d->0->%d for %d presented frames.\n",
+				old_msaa_samples, new_msaa_samples, msaa_downshift_release_frames));
+		}
 		bool gtao_buffers_changed =
 			pref_state->gtao_enabled != old_state.gtao_enabled ||
 			pref_state->gtao_resolution != old_state.gtao_resolution;
@@ -342,12 +395,12 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 			SetGammaValue(pref_state->gamma);
 		}
 
-		ApplySwapInterval(pref_state->vsync_on != 0);
+		ApplySwapInterval();
 		//}
 	}
 	else
 	{
-		OpenGL_preferred_state = *pref_state;
+		OpenGL_preferred_state = applied_state;
 	}
 
 	return retval;
@@ -362,7 +415,18 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 	}
 
 	if (framebuffer_ok)
+	{
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
+		GL4PerfFramebufferState("StartFrame", framebuffers[framebuffer_current_draw],
+			framebuffer_current_draw, SupersamplingFactor());
+		if (msaa_downshift_release_frames > 0 &&
+			framebuffers[framebuffer_current_draw].RequestedSamples() == 0)
+		{
+			msaa_forced_off_scene_presented = true;
+			GL4PerfMsaaStageState("OffScene", msaa_downshift_release_frames,
+				msaa_forced_off_target_samples);
+		}
+	}
 
 	GLenum glclearflags = 0;
 	if (clear_flags & RF_CLEAR_ZBUFFER)
@@ -378,7 +442,6 @@ void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 		glClear(glclearflags);
 	if (framebuffer_ok)
 	{
-		motion_vectors.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
 		if (!post_protection_mask_cleared_this_frame)
 		{
 			post_protection_mask.ClearAttached(framebuffers[framebuffer_current_draw].Handle());
@@ -478,6 +541,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 				downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
 				downsampleshader_dest_origin);
 		}
+		GL4PerfGpuDrain("GPU.PresentDownsample.4xTo2x");
 		downsampleshader.Use();
 		{
 			PERF_MARKER_SCOPE("Post.PresentDownsample.2xTo1x");
@@ -485,6 +549,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
 				downsampleshader_dest_origin);
 		}
+		GL4PerfGpuDrain("GPU.PresentDownsample.2xTo1x");
 		present_framebuffer = &resolved_framebuffer;
 	}
 	else if (supersampling_factor >= 2)
@@ -496,6 +561,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
 				downsampleshader_dest_origin);
 		}
+		GL4PerfGpuDrain("GPU.PresentDownsample.2xTo1x");
 		present_framebuffer = &resolved_framebuffer;
 	}
 	else if (late_post_enabled && framebuffers[framebuffer_current_draw].Samples() >= 2)
@@ -506,6 +572,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 			framebuffers[framebuffer_current_draw].BlitToRaw(resolved_framebuffer.Handle(), 0, 0,
 				resolved_framebuffer.Width(), resolved_framebuffer.Height(), GL_NEAREST);
 		}
+		GL4PerfGpuDrain("GPU.PresentResolve.MSAA");
 		present_framebuffer = &resolved_framebuffer;
 	}
 
@@ -516,12 +583,14 @@ bool GL4Renderer::BeginPostPresentFrame()
 			PERF_MARKER_SCOPE("Post.PresentDepth");
 			bloom_source_framebuffer.BlitDepthTo(present_framebuffer->Handle(), 0, 0,
 				present_framebuffer->Width(), present_framebuffer->Height());
+			GL4PerfGpuDrain("GPU.PresentDepth");
 		}
 		else if (present_framebuffer != &framebuffers[framebuffer_current_draw])
 		{
 			PERF_MARKER_SCOPE("Post.PresentDepth");
 			framebuffers[framebuffer_current_draw].BlitDepthTo(present_framebuffer->Handle(), 0, 0,
 				present_framebuffer->Width(), present_framebuffer->Height());
+			GL4PerfGpuDrain("GPU.PresentDepth");
 		}
 	}
 
@@ -551,11 +620,14 @@ bool GL4Renderer::BeginPostPresentFrame()
 			ao_scene_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
 			bloom_source_framebuffer.BlitToRaw(ao_scene_framebuffer.Handle(), 0, 0,
 				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height(), GL_NEAREST);
+			GL4PerfGpuDrain("GPU.GTAO.SceneColorCopy");
 			bloom_source_framebuffer.BlitDepthTo(ao_scene_framebuffer.Handle(), 0, 0,
 				ao_scene_framebuffer.Width(), ao_scene_framebuffer.Height());
+			GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
 
 			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
 				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture);
+			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
 			ao_compositeshader.Use();
@@ -568,20 +640,24 @@ bool GL4Renderer::BeginPostPresentFrame()
 				GL_DrawFramebufferQuad(ao_composite_framebuffer.Handle(), 0, 0,
 					ao_composite_framebuffer.Width(), ao_composite_framebuffer.Height());
 			}
+			GL4PerfGpuDrain("GPU.GTAO.DeferredComposite");
 			bloom_source_framebuffer.BlitDepthTo(ao_composite_framebuffer.Handle(), 0, 0,
 				ao_composite_framebuffer.Width(), ao_composite_framebuffer.Height());
+			GL4PerfGpuDrain("GPU.GTAO.CompositeDepthCopy");
 			present_framebuffer = &ao_composite_framebuffer;
 		}
 		else
 		{
 			gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
 				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture);
+			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
 	}
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
 		OpenGL_preferred_state, OpenGL_state, display_gamma,
 		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
+	GL4PerfGpuDrain("GPU.Bloom.Apply");
 	if (bloom_framebuffer)
 	{
 		bloom.compositeshader.Use();
@@ -599,6 +675,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 			GL_DrawFramebufferQuad(post_present_framebuffer.Handle(), 0, 0,
 				post_present_framebuffer.Width(), post_present_framebuffer.Height());
 		}
+		GL4PerfGpuDrain("GPU.Bloom.Composite");
 	}
 	else
 	{
@@ -606,6 +683,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 		glUniform1f(blitshader_gamma, display_gamma);
 		present_framebuffer->BlitTo(post_present_framebuffer.Handle(), 0, 0,
 			post_present_framebuffer.Width(), post_present_framebuffer.Height(), false);
+		GL4PerfGpuDrain("GPU.PostPresentBlit");
 	}
 	ShaderProgram::ClearBinding();
 
@@ -672,31 +750,68 @@ void GL4Renderer::EndPostPresentFrame()
 		UpdatePresentRect();
 		blitshader.Use();
 		glUniform1f(blitshader_gamma, 1.0f);
-		post_present_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y,
-			framebuffer_blit_w, framebuffer_blit_h, false);
+		{
+			PERF_MARKER_SCOPE("Renderer.Flip.BackbufferBlit");
+			post_present_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y,
+				framebuffer_blit_w, framebuffer_blit_h, false);
+		}
+		GL4PerfGpuDrain("GPU.BackbufferBlit");
 		ShaderProgram::ClearBinding();
 	}
 
 #if defined(SDL3)
-	SDL_GL_SwapWindow(GLWindow);
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL4PerfPresentState("BeforeSwap", framebuffer_current_draw, post_present_pending_swap);
+		SDL_GL_SwapWindow(GLWindow);
+	}
 #elif defined(WIN32)
-	SwapBuffers((HDC)hOpenGLDC);
-	if (OpenGL_preferred_state.vsync_on)
-		FlushDwmForVSync();
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL4PerfPresentState("BeforeSwap", framebuffer_current_draw, post_present_pending_swap);
+		SwapBuffers((HDC)hOpenGLDC);
+	}
 #elif defined(__LINUX__)
-	SDL_GL_SwapBuffers();
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL4PerfPresentState("BeforeSwap", framebuffer_current_draw, post_present_pending_swap);
+		SDL_GL_SwapBuffers();
+	}
 #endif
 
-	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL4_FBOS;
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
-	//Scene rendering is about to write to this framebuffer's MSAA attachments,
-	//so any cached resolve from the previous time we used this slot is stale.
-	framebuffers[framebuffer_current_draw].MarkAllDirty();
-	bloom_source_valid = false;
-	ao_scene_valid = false;
-	post_protection_mask_dirty = false;
-	post_protection_mask_cleared_this_frame = false;
-	post_present_pending_swap = false;
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.NextFramebuffer");
+		framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL4_FBOS;
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+		//Scene rendering is about to write to this framebuffer's MSAA attachments,
+		//so any cached resolve from the previous time we used this slot is stale.
+		framebuffers[framebuffer_current_draw].MarkAllDirty();
+		bloom_source_valid = false;
+		ao_scene_valid = false;
+		post_protection_mask_dirty = false;
+		post_protection_mask_cleared_this_frame = false;
+		post_present_pending_swap = false;
+	}
+	if (msaa_downshift_release_frames > 0)
+	{
+		if (msaa_forced_off_scene_presented)
+		{
+			msaa_forced_off_scene_presented = false;
+			msaa_downshift_release_frames--;
+			GL4PerfMsaaStageState("OffPresented", msaa_downshift_release_frames,
+				msaa_forced_off_target_samples);
+			if (msaa_downshift_release_frames == 0 && framebuffer_ok)
+			{
+				PERF_MARKER_SCOPE("Renderer.Flip.DeferredMsaaUpdate");
+				if (msaa_deferred_preferred_state_valid)
+				{
+					OpenGL_preferred_state = msaa_deferred_preferred_state;
+					msaa_deferred_preferred_state_valid = false;
+				}
+				UpdateFramebuffer();
+			}
+		}
+	}
 
 #ifdef _DEBUG
 	GLenum err = glGetError();
@@ -756,10 +871,12 @@ void GL4Renderer::CaptureBloomSource()
 					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
 						bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
 						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+					GL4PerfGpuDrain("GPU.CaptureDownsample.4xTo2x");
 					downsampleshader.Use();
 					bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
 						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
 						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+					GL4PerfGpuDrain("GPU.CaptureDownsample.2xTo1x");
 				}
 				else if (supersampling_factor >= 2)
 				{
@@ -767,11 +884,13 @@ void GL4Renderer::CaptureBloomSource()
 					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
 						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
 						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+					GL4PerfGpuDrain("GPU.CaptureDownsample.2xTo1x");
 				}
 				else
 				{
 					framebuffers[framebuffer_current_draw].BlitToRaw(bloom_source_framebuffer.Handle(), 0, 0,
 						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(), GL_NEAREST);
+					GL4PerfGpuDrain("GPU.CaptureBlit");
 				}
 				ao_scene_valid = true;
 			}
@@ -780,6 +899,7 @@ void GL4Renderer::CaptureBloomSource()
 				framebuffers[framebuffer_current_draw].BlitDepthTo(bloom_source_framebuffer.Handle(), 0, 0,
 					bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height());
 			}
+			GL4PerfGpuDrain("GPU.CaptureDepth");
 
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
@@ -1553,18 +1673,58 @@ int GL4Renderer::SaveScreenshotPNG(const char* filename)
 
 void GL4Renderer::UpdateFramebuffer(void)
 {
-	int target_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
+	int preferred_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
+	int target_samples = preferred_samples;
+	uint32_t current_samples = framebuffers[0].RequestedSamples();
+	if (preferred_samples == 0)
+	{
+		if (!msaa_deferred_preferred_state_valid)
+		{
+			msaa_downshift_release_frames = 0;
+			msaa_forced_off_target_samples = 0;
+			msaa_forced_off_scene_presented = false;
+		}
+	}
+	else if (msaa_downshift_release_frames > 0)
+		target_samples = 0;
+	else if (msaa_forced_off_target_samples != 0)
+	{
+		msaa_forced_off_target_samples = 0;
+		msaa_forced_off_scene_presented = false;
+	}
+	else if (framebuffers[0].Handle() != 0 && current_samples != 0 && current_samples != (uint32_t)preferred_samples)
+	{
+		msaa_downshift_release_frames = MSAA_DOWNSHIFT_RELEASE_FRAMES;
+		msaa_forced_off_target_samples = preferred_samples;
+		msaa_forced_off_scene_presented = false;
+		target_samples = 0;
+	}
 	int target_width = FramebufferWidth();
 	int target_height = FramebufferHeight();
+	mprintf((0, "GL4 UpdateFramebuffer begin: preferred=%d target=%d current=%u stage=%d size=%dx%d screen=%dx%d ssaa=%d bloom=%d gtao=%d postmask=%u/%u motion=%u/%u.\n",
+		preferred_samples, target_samples, (unsigned)current_samples, msaa_downshift_release_frames,
+		target_width, target_height, OpenGL_state.screen_width, OpenGL_state.screen_height,
+		SupersamplingFactor(), OpenGL_preferred_state.bloom_enabled ? 1 : 0,
+		OpenGL_preferred_state.gtao_enabled ? 1 : 0,
+		(unsigned)post_protection_mask.mask_texture, (unsigned)post_protection_mask.samples,
+		(unsigned)motion_vectors.velocity_texture, (unsigned)motion_vectors.samples));
 	bool framebuffer_state_changed = framebuffers[0].Handle() != 0 &&
 		(framebuffers[0].RequestedSamples() != (uint32_t)target_samples ||
 		 framebuffers[0].Width() != (uint32_t)target_width ||
 		 framebuffers[0].Height() != (uint32_t)target_height);
 	if (framebuffer_state_changed)
 	{
-		// Finish once on MSAA/SSAA transitions so the driver can release old
-		// render-target storage before the replacement buffers are allocated.
+		// Drain current rendering, unbind old targets, then delete every old
+		// target before allocating any replacements. Direct 8x->2x transitions
+		// should behave like 8x->off->2x instead of interleaving old 8x storage
+		// with new 2x allocations.
+		glDisable(GL_MULTISAMPLE);
 		glFinish();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+		rend_ClearBoundTextures();
+		for (int i = 0; i < NUM_GL4_FBOS; i++)
+			framebuffers[i].Destroy();
 		resolved_framebuffer.Destroy();
 		downscale_framebuffer.Destroy();
 		bloom.DestroyFramebuffers();
@@ -1576,14 +1736,14 @@ void GL4Renderer::UpdateFramebuffer(void)
 		post_present_framebuffer.Destroy();
 		motion_vectors.Destroy();
 		post_protection_mask.Destroy();
+		glFinish();
 	}
 	gtao.DestroyFramebuffers();
+	motion_vectors.Destroy();
 
 	for (int i = 0; i < NUM_GL4_FBOS; i++)
 	{
 		framebuffers[i].Update(target_width, target_height, target_samples);
-		motion_vectors.Update(target_width, target_height, framebuffers[i].Samples());
-		motion_vectors.AttachToFramebuffer(framebuffers[i].Handle());
 		post_protection_mask.Update(target_width, target_height, framebuffers[i].Samples());
 		post_protection_mask.AttachToFramebuffer(framebuffers[i].Handle());
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[i].Handle());
@@ -1615,6 +1775,13 @@ void GL4Renderer::UpdateFramebuffer(void)
 		glDisable(GL_MULTISAMPLE);
 	//Unbind the read framebuffer so that OBS can capture the window properly
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	mprintf((0, "GL4 UpdateFramebuffer end: scene0 fbo=%u req=%u actual=%u scene1 fbo=%u req=%u actual=%u resolved=%u downscale=%u post=%u postmask=%u/%u motion=%u/%u.\n",
+		(unsigned)framebuffers[0].Handle(), (unsigned)framebuffers[0].RequestedSamples(), (unsigned)framebuffers[0].Samples(),
+		(unsigned)framebuffers[1].Handle(), (unsigned)framebuffers[1].RequestedSamples(), (unsigned)framebuffers[1].Samples(),
+		(unsigned)resolved_framebuffer.Handle(), (unsigned)downscale_framebuffer.Handle(),
+		(unsigned)post_present_framebuffer.Handle(),
+		(unsigned)post_protection_mask.mask_texture, (unsigned)post_protection_mask.samples,
+		(unsigned)motion_vectors.velocity_texture, (unsigned)motion_vectors.samples));
 
 	GL_InitFramebufferVAO();
 }

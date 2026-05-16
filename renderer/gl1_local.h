@@ -53,7 +53,7 @@ struct compat_tex_array
 	float s, t, r, w;
 };
 
-constexpr int NUM_GL1_FBOS = 2;
+constexpr int NUM_GL1_FBOS = 1;
 class GLCompatibilityRenderer : public IRenderer
 {
 	//MAIN
@@ -71,6 +71,11 @@ class GLCompatibilityRenderer : public IRenderer
 	Framebuffer bloom_source_downscale_framebuffer;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
+	int msaa_downshift_release_frames = 0;
+	int msaa_forced_off_target_samples = 0;
+	bool msaa_forced_off_scene_presented = false;
+	renderer_preferred_state msaa_deferred_preferred_state = {};
+	bool msaa_deferred_preferred_state_valid = false;
 
 	unsigned int framebuffer_blit_x = 0, framebuffer_blit_y = 0, framebuffer_blit_w = 0, framebuffer_blit_h = 0;
 
@@ -159,7 +164,7 @@ class GLCompatibilityRenderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;

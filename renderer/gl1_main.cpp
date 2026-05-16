@@ -17,8 +17,55 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "gl1_local.h"
+#include "gameloop.h"
 #include "rtperformance.h"
 #include <math.h>
+
+static void GL1PerfFramebufferState(const char* phase, const Framebuffer& framebuffer,
+	int slot, int ssaa_factor)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.%s slot=%d %ux%u req=%u actual=%u ssaa=%d",
+		phase, slot, (unsigned)framebuffer.Width(), (unsigned)framebuffer.Height(),
+		(unsigned)framebuffer.RequestedSamples(), (unsigned)framebuffer.Samples(),
+		ssaa_factor);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL1PerfMsaaStageState(const char* phase, int frames_remaining, int target_samples)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.MSAAStage.%s remaining=%d target=%d",
+		phase, frames_remaining, target_samples);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static void GL1PerfPresentState(const char* phase, int framebuffer_slot)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	int swap_interval = -999;
+#if defined(SDL3)
+	swap_interval = SDL_GL_GetSwapInterval();
+#elif defined(WIN32)
+	if (dwglGetSwapIntervalEXT)
+		swap_interval = dwglGetSwapIntervalEXT();
+#endif
+
+	char marker[80];
+	snprintf(marker, sizeof(marker), "State.Present.%s swap_interval=%d slot=%d",
+		phase, swap_interval, framebuffer_slot);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
+static constexpr int MSAA_DOWNSHIFT_RELEASE_FRAMES = 4;
 
 int GLCompatibilityRenderer::SupersamplingFactor() const
 {
@@ -216,8 +263,26 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 {
 	int retval = 1;
 	renderer_preferred_state old_state = OpenGL_preferred_state;
+	int old_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(old_state));
+	int new_msaa_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(*pref_state));
+	const bool staged_msaa_transition =
+		old_msaa_samples != 0 && new_msaa_samples != 0 && old_msaa_samples != new_msaa_samples;
+	const bool keep_deferred_msaa_transition =
+		msaa_deferred_preferred_state_valid && msaa_downshift_release_frames > 0 && new_msaa_samples != 0;
+	renderer_preferred_state applied_state = *pref_state;
+	if (staged_msaa_transition || keep_deferred_msaa_transition)
+	{
+		msaa_deferred_preferred_state = *pref_state;
+		msaa_deferred_preferred_state_valid = true;
+		applied_state.msaa_samples = 0;
+		applied_state.antialised = false;
+	}
+	else
+	{
+		msaa_deferred_preferred_state_valid = false;
+	}
 
-	OpenGL_preferred_state = *pref_state;
+	OpenGL_preferred_state = applied_state;
 	OpenGL_preferred_state.per_pixel_lighting = false;
 	if (OpenGL_state.initted)
 	{
@@ -244,6 +309,14 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 			|| pref_state->supersampling_factor != old_state.supersampling_factor
 			|| pref_state->msaa_samples != old_state.msaa_samples)
 		{
+			if (staged_msaa_transition)
+			{
+				msaa_downshift_release_frames = MSAA_DOWNSHIFT_RELEASE_FRAMES;
+				msaa_forced_off_target_samples = new_msaa_samples;
+				msaa_forced_off_scene_presented = false;
+				mprintf((0, "GL1 MSAA transition: forcing preferred %d->0->%d for %d presented frames.\n",
+					old_msaa_samples, new_msaa_samples, msaa_downshift_release_frames));
+			}
 			UpdateWindow();
 			SetViewport();
 			UpdateFramebuffer();
@@ -255,24 +328,16 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 		}
 
 #ifdef SDL3
-		if (pref_state->vsync_on)
-			SDL_GL_SetSwapInterval(1);
-		else
-			SDL_GL_SetSwapInterval(0);
+		SDL_GL_SetSwapInterval(0);
 #elif WIN32
 		if (dwglSwapIntervalEXT)
-		{
-			if (pref_state->vsync_on)
-				dwglSwapIntervalEXT(1);
-			else
-				dwglSwapIntervalEXT(0);
-		}
+			dwglSwapIntervalEXT(0);
 #endif
 		//}
 	}
 	else
 	{
-		OpenGL_preferred_state = *pref_state;
+		OpenGL_preferred_state = applied_state;
 		OpenGL_preferred_state.per_pixel_lighting = false;
 	}
 
@@ -284,7 +349,18 @@ int GLCompatibilityRenderer::SetPreferredState(renderer_preferred_state* pref_st
 void GLCompatibilityRenderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
 	if (framebuffer_ok)
+	{
 		framebuffers[framebuffer_current_draw].MarkAllDirty();
+		GL1PerfFramebufferState("StartFrame", framebuffers[framebuffer_current_draw],
+			framebuffer_current_draw, SupersamplingFactor());
+		if (msaa_downshift_release_frames > 0 &&
+			framebuffers[framebuffer_current_draw].RequestedSamples() == 0)
+		{
+			msaa_forced_off_scene_presented = true;
+			GL1PerfMsaaStageState("OffScene", msaa_downshift_release_frames,
+				msaa_forced_off_target_samples);
+		}
+	}
 
 	if (clear_flags & RF_CLEAR_ZBUFFER)
 	{
@@ -383,7 +459,10 @@ void GLCompatibilityRenderer::Flip(void)
 	{
 		blitshader.Use();
 		glUniform1f(blitshader_gamma, display_gamma);
-		present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+		{
+			PERF_MARKER_SCOPE("Renderer.Flip.BackbufferBlit");
+			present_framebuffer->BlitTo(0, framebuffer_blit_x, framebuffer_blit_y, framebuffer_blit_w, framebuffer_blit_h, false);
+		}
 	}
 	ShaderProgram::ClearBinding();
 
@@ -398,17 +477,53 @@ void GLCompatibilityRenderer::Flip(void)
 #endif
 
 #if defined(SDL3)
-	SDL_GL_SwapWindow(GLWindow);
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL1PerfPresentState("BeforeSwap", framebuffer_current_draw);
+		SDL_GL_SwapWindow(GLWindow);
+	}
 #elif defined(WIN32)
-	SwapBuffers((HDC)hOpenGLDC);
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL1PerfPresentState("BeforeSwap", framebuffer_current_draw);
+		SwapBuffers((HDC)hOpenGLDC);
+	}
 #elif defined(__LINUX__)
-	SDL_GL_SwapBuffers();
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.SwapBuffers");
+		GL1PerfPresentState("BeforeSwap", framebuffer_current_draw);
+		SDL_GL_SwapBuffers();
+	}
 #endif
 
-	framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL1_FBOS;
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
-	framebuffers[framebuffer_current_draw].MarkAllDirty();
-	bloom_source_valid = false;
+	{
+		PERF_MARKER_SCOPE("Renderer.Flip.NextFramebuffer");
+		framebuffer_current_draw = (framebuffer_current_draw + 1) % NUM_GL1_FBOS;
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[framebuffer_current_draw].Handle());
+		framebuffers[framebuffer_current_draw].MarkAllDirty();
+		bloom_source_valid = false;
+	}
+	if (msaa_downshift_release_frames > 0)
+	{
+		if (msaa_forced_off_scene_presented)
+		{
+			msaa_forced_off_scene_presented = false;
+			msaa_downshift_release_frames--;
+			GL1PerfMsaaStageState("OffPresented", msaa_downshift_release_frames,
+				msaa_forced_off_target_samples);
+			if (msaa_downshift_release_frames == 0 && framebuffer_ok)
+			{
+				PERF_MARKER_SCOPE("Renderer.Flip.DeferredMsaaUpdate");
+				if (msaa_deferred_preferred_state_valid)
+				{
+					OpenGL_preferred_state = msaa_deferred_preferred_state;
+					OpenGL_preferred_state.per_pixel_lighting = false;
+					msaa_deferred_preferred_state_valid = false;
+				}
+				UpdateFramebuffer();
+			}
+		}
+	}
 
 #ifndef NDEBUG
 	err = glGetError();
@@ -1264,7 +1379,32 @@ int GLCompatibilityRenderer::SaveScreenshotPNG(const char* filename)
 
 void GLCompatibilityRenderer::UpdateFramebuffer(void)
 {
-	int target_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
+	int preferred_samples = GL_GetSupportedMsaaSamples(RendererMsaaSamples(OpenGL_preferred_state));
+	int target_samples = preferred_samples;
+	uint32_t current_samples = framebuffers[0].RequestedSamples();
+	if (preferred_samples == 0)
+	{
+		if (!msaa_deferred_preferred_state_valid)
+		{
+			msaa_downshift_release_frames = 0;
+			msaa_forced_off_target_samples = 0;
+			msaa_forced_off_scene_presented = false;
+		}
+	}
+	else if (msaa_downshift_release_frames > 0)
+		target_samples = 0;
+	else if (msaa_forced_off_target_samples != 0)
+	{
+		msaa_forced_off_target_samples = 0;
+		msaa_forced_off_scene_presented = false;
+	}
+	else if (framebuffers[0].Handle() != 0 && current_samples != 0 && current_samples != (uint32_t)preferred_samples)
+	{
+		msaa_downshift_release_frames = MSAA_DOWNSHIFT_RELEASE_FRAMES;
+		msaa_forced_off_target_samples = preferred_samples;
+		msaa_forced_off_scene_presented = false;
+		target_samples = 0;
+	}
 	int target_width = FramebufferWidth();
 	int target_height = FramebufferHeight();
 	bool framebuffer_state_changed = framebuffers[0].Handle() != 0 &&
@@ -1273,15 +1413,24 @@ void GLCompatibilityRenderer::UpdateFramebuffer(void)
 		 framebuffers[0].Height() != (uint32_t)target_height);
 	if (framebuffer_state_changed)
 	{
-		// Finish once on MSAA/SSAA transitions so the driver can release old
-		// render-target storage before the replacement buffers are allocated.
+		// Drain current rendering, unbind old targets, then delete every old
+		// target before allocating any replacements. Direct 8x->2x transitions
+		// should behave like 8x->off->2x instead of interleaving old 8x storage
+		// with new 2x allocations.
+		glDisable(GL_MULTISAMPLE);
 		glFinish();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+		rend_ClearBoundTextures();
+		for (int i = 0; i < NUM_GL1_FBOS; i++)
+			framebuffers[i].Destroy();
 		resolved_framebuffer.Destroy();
 		downscale_framebuffer.Destroy();
 		bloom.DestroyFramebuffers();
 		bloom_source_framebuffer.Destroy();
 		bloom_source_resolved_framebuffer.Destroy();
 		bloom_source_downscale_framebuffer.Destroy();
+		glFinish();
 	}
 
 	for (int i = 0; i < NUM_GL1_FBOS; i++)

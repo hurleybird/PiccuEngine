@@ -436,18 +436,10 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	mprintf((0, "OpenGL initialization at %d x %d was successful.\n", OpenGL_state.screen_width, OpenGL_state.screen_height));
 
 #if defined(SDL3)
-	if (pref_state->vsync_on)
-		SDL_GL_SetSwapInterval(1);
-	else
-		SDL_GL_SetSwapInterval(0);
+	SDL_GL_SetSwapInterval(0);
 #elif defined(WIN32)
 	if (dwglSwapIntervalEXT)
-	{
-		if (pref_state->vsync_on)
-			dwglSwapIntervalEXT(1);
-		else
-			dwglSwapIntervalEXT(0);
-	}
+		dwglSwapIntervalEXT(0);
 #endif
 
 	extern const char* blitVertexSrc;

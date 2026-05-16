@@ -458,9 +458,9 @@ int GL4Renderer::Setup(HDC glhdc)
 }
 #endif
 
-void GL4Renderer::ApplySwapInterval(bool enabled)
+void GL4Renderer::ApplySwapInterval()
 {
-	const int interval = enabled ? 1 : 0;
+	const int interval = 0;
 
 #if defined(SDL3)
 	if (!SDL_GL_SetSwapInterval(interval))
@@ -472,7 +472,7 @@ void GL4Renderer::ApplySwapInterval(bool enabled)
 #elif defined(WIN32)
 	if (!dwglSwapIntervalEXT)
 	{
-		mprintf((0, "WGL_EXT_swap_control not available; vsync request %d ignored.\n", interval));
+		mprintf((0, "WGL_EXT_swap_control not available; swap interval request %d ignored.\n", interval));
 		return;
 	}
 
@@ -669,7 +669,7 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 
 	mprintf((0, "OpenGL initialization at %d x %d was successful.\n", OpenGL_state.screen_width, OpenGL_state.screen_height));
 
-	ApplySwapInterval(pref_state->vsync_on != 0);
+	ApplySwapInterval();
 
 	extern const char* blitVertexSrc;
 	extern const char* blitFragmentSrc;

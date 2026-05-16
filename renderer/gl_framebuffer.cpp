@@ -21,6 +21,24 @@
 static GLuint fbVAOName;
 static GLuint fbVBOName;
 
+static void GLFramebufferPerfGpuDrain(const char* marker_name)
+{
+	(void)marker_name;
+}
+
+static void GLFramebufferPerfResolveState(const char* kind, uint32_t width, uint32_t height,
+	uint32_t requested_samples, uint32_t actual_samples)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	char marker[96];
+	snprintf(marker, sizeof(marker), "State.Resolve.%s %ux%u req=%u actual=%u",
+		kind, (unsigned)width, (unsigned)height,
+		(unsigned)requested_samples, (unsigned)actual_samples);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
 static const float framebuffer_buffer[] = { -1.0f, -1.0f, 0.0f, 0.0f,
 					  3.0f, -1.0f, 2.0f, 0.0f,
 					  -1.0f, 3.0f, 0.0f, 2.0f };
@@ -329,10 +347,10 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 		glGenFramebuffers(1, &m_subname);
 
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_colorname);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_RGBA8, width, height, GL_FALSE);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_RGBA8, width, height, GL_TRUE);
 
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, m_depthname);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_DEPTH_COMPONENT32F, width, height, GL_FALSE);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, msaa_samples, GL_DEPTH_COMPONENT32F, width, height, GL_TRUE);
 
 		glBindTexture(GL_TEXTURE_2D, m_subcolorname);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -385,6 +403,10 @@ bool Framebuffer::Allocate(int width, int height, int msaa_samples)
 		mprintf((0, "Framebuffer::Update: framebuffer status 0x%x.\n", fbstatus));
 		return false;
 	}
+	mprintf((0, "Framebuffer::Allocate: fbo=%u color=%u depth=%u subfbo=%u subcolor=%u subdepth=%u %dx%d samples=%d.\n",
+		(unsigned)m_name, (unsigned)m_colorname, (unsigned)m_depthname,
+		(unsigned)m_subname, (unsigned)m_subcolorname, (unsigned)m_subdepthname,
+		width, height, msaa_samples));
 	return true;
 }
 
@@ -455,10 +477,23 @@ void Framebuffer::SubFramebufferBlit(GLbitfield mask)
 
 	if (to_resolve != 0)
 	{
+		if ((to_resolve & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)) == (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT))
+			GLFramebufferPerfResolveState("ColorDepth", m_width, m_height, m_requested_samples, m_samples);
+		else if (to_resolve & GL_COLOR_BUFFER_BIT)
+			GLFramebufferPerfResolveState("Color", m_width, m_height, m_requested_samples, m_samples);
+		else if (to_resolve & GL_DEPTH_BUFFER_BIT)
+			GLFramebufferPerfResolveState("Depth", m_width, m_height, m_requested_samples, m_samples);
+
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, m_name);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_subname);
 		glBlitFramebuffer(0, 0, m_width, m_height, 0, 0,
 			m_width, m_height, to_resolve, GL_NEAREST);
+		if ((to_resolve & (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)) == (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT))
+			GLFramebufferPerfGpuDrain("GPU.Resolve.ColorDepth");
+		else if (to_resolve & GL_COLOR_BUFFER_BIT)
+			GLFramebufferPerfGpuDrain("GPU.Resolve.Color");
+		else if (to_resolve & GL_DEPTH_BUFFER_BIT)
+			GLFramebufferPerfGpuDrain("GPU.Resolve.Depth");
 
 #ifdef _DEBUG
 		GLenum err = glGetError();
@@ -572,6 +607,7 @@ void Framebuffer::BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glDrawArrays(GL_TRIANGLES, 0, 3);
+	GLFramebufferPerfGpuDrain("GPU.FramebufferBlitTo");
 
 	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
 	GL_SetEnabledState(GL_BLEND, blend_enabled);
@@ -642,6 +678,7 @@ void Framebuffer::DownsampleTo(GLuint target, unsigned int x, unsigned int y, un
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glDrawArrays(GL_TRIANGLES, 0, 3);
+	GLFramebufferPerfGpuDrain("GPU.FramebufferDownsampleTo");
 
 	glViewport(oldviewport[0], oldviewport[1], oldviewport[2], oldviewport[3]);
 	GL_SetEnabledState(GL_BLEND, blend_enabled);
@@ -671,7 +708,7 @@ void MotionVectorResources::Update(uint32_t new_width, uint32_t new_height, uint
 	if (samples >= 2)
 	{
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, velocity_texture);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG16F, width, height, GL_FALSE);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG16F, width, height, GL_TRUE);
 
 		glGenTextures(1, &resolved_texture);
 		glBindTexture(GL_TEXTURE_2D, resolved_texture);
@@ -796,7 +833,7 @@ void PostProtectionMaskResources::Update(uint32_t new_width, uint32_t new_height
 	if (samples >= 2)
 	{
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, mask_texture);
-		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG8, width, height, GL_FALSE);
+		glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RG8, width, height, GL_TRUE);
 	}
 	else
 	{

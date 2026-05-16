@@ -63,7 +63,6 @@ extern int Mine_depth;
 extern float Fog_zone_start,Fog_zone_end;
 extern bool DoBumpmaps;
 extern bool Render_mirror_for_room;
-extern bool Vsync_enabled;
 
 extern float Room_light_val;
 extern int Room_fog_plane_check;

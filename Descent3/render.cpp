@@ -121,8 +121,6 @@ static int Search_lightmaps = 0;		// true if searching for a lightmap
 int found_lightmap;
 #endif	//ifndef EDITOR
 
-bool Vsync_enabled = true;
-
 // Prototypes
 void RenderRoomObjects(room* rp);
 

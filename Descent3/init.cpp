@@ -296,11 +296,9 @@ void PreInitD3Systems()
 		Use_file_xfer = 0;
 	
 	int iframelmtarg = FindArg("-limitframe");
-	bool explicit_framecap = false;
 	if(iframelmtarg)
 	{
 		Min_allowed_frametime = atoi(GameArgs[iframelmtarg+1]) / 1000.0;
-		explicit_framecap = true;
 		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
 	}
 	else
@@ -317,12 +315,7 @@ void PreInitD3Systems()
 		if (cap == 0 || cap > 1000) //[ISB] high enough framerates cause the game to eat itself
 			cap = 1000;
 		Min_allowed_frametime = (1.0/cap);
-		explicit_framecap = true;
 		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
-	}
-	else if(!explicit_framecap && !FindArg("-dedicated"))
-	{
-		EnableDisplayRefreshFramecap();
 	}
 
 	//Mouselook sensitivity!
@@ -415,11 +408,6 @@ void SaveGameSettings()
 	Database->write("FastHeadlight",Detail_settings.Fast_headlight_on);
 	Database->write("MirrorSurfaces",Detail_settings.Mirrored_surfaces);
 	Database->write("MissileView",Missile_camera_window);
-#ifndef GAMEGAUGE
-	Database->write("RS_vsync",Render_preferred_state.vsync_on);
-#else
-	Render_preferred_state.vsync_on = 0;
-#endif
 	Database->write("OpenGLProfile", DesiredOpenGLProfile);
 	Database->write("OpenGLProfileExplicit", DesiredOpenGLProfileExplicit);
 	Database->write("DetailScorchMarks",Detail_settings.Scorches_enabled);
@@ -615,7 +603,6 @@ void LoadGameSettings()
 	Sound_reverb_lf_gain_scale = 1.0f;
 	Sound_hrtf_music_bypass = 1.0f;
 	Missile_camera_window = SVW_LEFT;
-	Render_preferred_state.vsync_on = true;
 	Detail_settings.Fog_enabled = true;
 	Detail_settings.Coronas_enabled = true;
 	Detail_settings.Procedurals_enabled = true;
@@ -782,7 +769,6 @@ void LoadGameSettings()
 	Database->read_int("MissileView",&Missile_camera_window);
 	Database->read("FastHeadlight",&Detail_settings.Fast_headlight_on);
 	Database->read("MirrorSurfaces",&Detail_settings.Mirrored_surfaces);
-	Database->read_int("RS_vsync",&Render_preferred_state.vsync_on);
 	Database->read("OpenGLProfileExplicit", &DesiredOpenGLProfileExplicit);
 	Database->read_int("OpenGLProfile", &DesiredOpenGLProfile);
 	if (DesiredOpenGLProfile != GLPROFILE_CORE && DesiredOpenGLProfile != GLPROFILE_COMPAT)
@@ -799,9 +785,6 @@ void LoadGameSettings()
 		Render_preferred_state.per_pixel_lighting = false;
 		Render_preferred_state.gtao_enabled = false;
 	}
-
-	if (FindArg ("-vsync"))
-		Render_preferred_state.vsync_on=true;
 
 //@@	// Base missile camera if in wrong window
 //@@	if (Missile_camera_window==SVW_CENTER)

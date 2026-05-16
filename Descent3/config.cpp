@@ -1060,7 +1060,6 @@ struct video_menu
 	bool* mipmapping;
 	bool* per_pixel_lighting;
 	bool* bloom_enabled;
-	bool* vsync;
 	bool* perf_markers;
 	bool* show_fps;
 
@@ -1208,11 +1207,6 @@ struct video_menu
 			}
 			changed = true;
 		}
-		if (vsync && sheet->HasChanged(vsync))
-		{
-			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
-			changed = true;
-		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1272,7 +1266,6 @@ struct video_menu
 		mipmapping = NULL;
 		per_pixel_lighting = NULL;
 		bloom_enabled = NULL;
-		vsync = NULL;
 		perf_markers = NULL;
 		show_fps = NULL;
 		fov = NULL;
@@ -1328,8 +1321,6 @@ struct video_menu
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
 
 		sheet->NewGroup(TXT_MONITOR, 0, 188);
-		vsync = sheet->AddLongCheckBox(TXT_CFG_VSYNCENABLED, (Render_preferred_state.vsync_on != 0));
-
 		sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
 		sheet->NewGroup("MSAA", 184, 0);
@@ -1379,8 +1370,6 @@ struct video_menu
 			else
 				ApplyGTAOPresetFromIndex(0);
 		}
-		if (vsync)
-			Render_preferred_state.vsync_on = (*vsync) ? 1 : 0;
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

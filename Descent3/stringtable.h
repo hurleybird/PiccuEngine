@@ -504,7 +504,6 @@ char *GetStringFromTableWithFallback(int index, const char *fallback);
 #define TXT_CFG_BITDEPTH				TXT(473)	//"Bit Depth"
 #define TXT_CFG_SIXTEENBIT				TXT(474)	//"16 Bit"
 #define TXT_CFG_THIRTYTWOBIT			TXT(475)	//"32 Bit"
-#define TXT_CFG_VSYNCENABLED			TXT(476)	//"Vsync Enabled"
 #define TXT_SNDM_CREATIVEEAX			TXT(477)	//"Creative EAX"
 #define TXT_CFG_MEDIUM					TXT(478)	//"Medium"
 #define TXT_CFG_MOUSEENABLED			TXT(479)	//"Mouse"

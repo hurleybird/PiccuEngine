@@ -134,8 +134,6 @@ bool Game_paused = false;
 
 // Used for limiting the framerate
 double Min_allowed_frametime = 0;
-static bool Display_refresh_framecap = false;
-static double Display_refresh_framecap_hz = 0.0;
 
 // determines if we're rendering the main view
 bool Rendering_main_view = false;
@@ -369,73 +367,6 @@ void ApplyShadowsToRooms();
 void StartGameMenu();
 void EndGameMenu();
 void ProcessGuidebotKeys(int key);
-
-static double NormalizeFramecapRefreshRate(double hz)
-{
-	if (hz < 24.0 || hz > 1000.0)
-		return 60.0;
-	return hz;
-}
-
-static void SetFramecapFromRefreshRate(double hz)
-{
-	hz = NormalizeFramecapRefreshRate(hz);
-	Min_allowed_frametime = 1.0 / hz;
-	Display_refresh_framecap_hz = hz;
-	mprintf((0, "Using display refresh framecap of %.3f Hz\n", hz));
-}
-
-static bool UseCoreVSyncFramePacing()
-{
-	return Render_preferred_state.vsync_on && OpenGLProfile == GLPROFILE_CORE &&
-		Min_allowed_frametime > 0.0 && !Dedicated_server;
-}
-
-static double GetCoreVSyncFrameTarget(double current_timer)
-{
-	const double interval = Min_allowed_frametime;
-	const double tolerance = interval * 0.05;
-	const double elapsed = current_timer - last_timer;
-
-	if (elapsed <= 0.0)
-		return last_timer + interval;
-
-	int intervals = (int)((elapsed - tolerance) / interval);
-	if (intervals < 1)
-		intervals = 1;
-
-	double target_time = last_timer + intervals * interval;
-	while (target_time < current_timer - tolerance)
-	{
-		intervals++;
-		target_time = last_timer + intervals * interval;
-	}
-
-	return target_time;
-}
-
-void EnableDisplayRefreshFramecap()
-{
-	Display_refresh_framecap = true;
-	SetFramecapFromRefreshRate(60.0);
-}
-
-void UpdateDisplayRefreshFramecap()
-{
-	if (!Display_refresh_framecap)
-		return;
-
-	double hz = rend_GetDisplayRefreshRate();
-	hz = NormalizeFramecapRefreshRate(hz);
-
-	double delta = hz - Display_refresh_framecap_hz;
-	if (delta < 0.0)
-		delta = -delta;
-	if (delta < 0.01)
-		return;
-
-	SetFramecapFromRefreshRate(hz);
-}
 
 //Make the 3D window larger
 void GrowWindow()
@@ -2474,6 +2405,26 @@ void GameProcessMusic()
 //float last_timer=0.0;
 int timer_paused = 0;
 
+static void PerfMarkersRecordFramePacingState(const char* phase)
+{
+	if (!Perf_markers_enabled)
+		return;
+
+	const double now = timer_GetTime64();
+	char marker[160];
+	snprintf(marker, sizeof(marker),
+		"State.FramePacing.%s min=%.3fms frametime=%.3fms since_last=%.3fms paused=%d timer_paused=%d game_if=%d menu_if=%d",
+		phase,
+		Min_allowed_frametime * 1000.0,
+		Frametime * 1000.0f,
+		(now - last_timer) * 1000.0,
+		Game_paused ? 1 : 0,
+		timer_paused,
+		Game_interface_mode,
+		Menu_interface_mode ? 1 : 0);
+	PerfMarkersRecordDuration(marker, PerfMarkersNow(), 0.0);
+}
+
 //Stop the Frametime clock
 void StopTime()
 {
@@ -2515,9 +2466,6 @@ void CalcFrameTime(double current_timer)
 	if (timer_paused)
 		return;
 
-	//[ISB] This doesn't read the timer anymore, and instead uses the target time.
-	//This is because there might be a very 
-	//float current_timer = timer_GetTime64();
 	if (current_timer >= last_timer)
 		Frametime = current_timer - last_timer;
 	else
@@ -2945,6 +2893,7 @@ void GameFrame(void)
 			if (Game_interface_mode == GAME_INTERFACE && !Menu_interface_mode)
 			{
 				PERF_MARKER_SCOPE("Renderer.Flip");
+				PerfMarkersRecordFramePacingState("BeforeFlip");
 				if (rend_BeginPostPresentFrame())
 				{
 					GameDrawPostPresentFrame(false);
@@ -2966,59 +2915,40 @@ void GameFrame(void)
 				}
 			}
 		}
+		PerfMarkersRecordFramePacingState("BeforeFramecap");
 		PerfMarkersEndFrame();
 
 		//float start_delay = timer_GetTime();
-		//Slow down the game if the user asked us to
 		double current_timer = timer_GetTime64();
-		double target_time = last_timer + Min_allowed_frametime;
-		if (current_timer > target_time) //If running slow, drop frames
+		if (Min_allowed_frametime > 0.0)
 		{
-			if (UseCoreVSyncFramePacing())
-				target_time = GetCoreVSyncFrameTarget(current_timer);
-			else
-				target_time = current_timer;
+			const double target_time = last_timer + Min_allowed_frametime;
+			if (current_timer < target_time)
+			{
+				unsigned int sleep_time = (unsigned int)((target_time - current_timer) * 1000.0);
+				if (sleep_time > 0)
+				{
+					Sleep(sleep_time);
+					current_timer = timer_GetTime64();
+				}
+			}
 		}
 
-		if (current_timer < target_time)
-		{
-			const double wait_time = target_time - current_timer;
-			if (wait_time > 0.0)
-			{
-				unsigned int sleeptime = (unsigned int)(wait_time * 1000);
-				//mprintf((0,"Sleeping for %d ms\n",sleeptime));
-				if (Dedicated_server)
-				{
-					Sleep(sleeptime);
-				}
-				else if (sleeptime > 2)
-					Sleep(sleeptime - 2);
-				
-			}
-			while (timer_GetTime64() < target_time) {} //[ISB] Sleeping isn't precise enough, poll for next update
-		}
+		//Compute how long frame took
+		CalcFrameTime(current_timer);
+
+		//Update Gametime
+		Gametime += Frametime;
 
 		static int graph_id = -2;
 		if (graph_id == -2)
 		{
 			graph_id = DebugGraph_Add((float)0.0f, (float)260.0f, "Framerate");
 		}
-		if (graph_id >= 0)
+		if (graph_id >= 0 && Frametime > 0)
 		{
-			float fps;
-
-			if (Frametime > 0)
-			{
-				fps = 1.0 / Frametime;
-				DebugGraph_Update(graph_id, fps);
-			}
+			DebugGraph_Update(graph_id, 1.0f / Frametime);
 		}
-
-		//Compute how long frame took
-		CalcFrameTime(target_time);
-
-		//Update Gametime
-		Gametime += Frametime;
 	}
 	else
 	{

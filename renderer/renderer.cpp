@@ -62,31 +62,15 @@ static IRenderer* rend_CreateRendererInstance()
 static bool rend_PreferredStateRequiresFreshRenderer(const renderer_preferred_state& old_state,
 	const renderer_preferred_state& new_state)
 {
-	return old_state.mipping != new_state.mipping ||
-		old_state.filtering != new_state.filtering ||
-		old_state.antialised != new_state.antialised ||
-		old_state.bit_depth != new_state.bit_depth ||
-		old_state.gamma != new_state.gamma ||
+	// Keep full renderer teardown scoped to framebuffer/context-defining settings.
+	return old_state.antialised != new_state.antialised ||
 		old_state.width != new_state.width ||
 		old_state.height != new_state.height ||
 		old_state.window_width != new_state.window_width ||
 		old_state.window_height != new_state.window_height ||
 		old_state.fullscreen != new_state.fullscreen ||
 		old_state.supersampling_factor != new_state.supersampling_factor ||
-		old_state.msaa_samples != new_state.msaa_samples ||
-		old_state.per_pixel_lighting != new_state.per_pixel_lighting ||
-		old_state.bloom_enabled != new_state.bloom_enabled ||
-		old_state.bloom_threshold != new_state.bloom_threshold ||
-		old_state.bloom_intensity != new_state.bloom_intensity ||
-		old_state.bloom_spread != new_state.bloom_spread ||
-		old_state.gtao_enabled != new_state.gtao_enabled ||
-		old_state.gtao_resolution != new_state.gtao_resolution ||
-		old_state.gtao_sample_count != new_state.gtao_sample_count ||
-		old_state.gtao_blur_radius != new_state.gtao_blur_radius ||
-		old_state.gtao_radius != new_state.gtao_radius ||
-		old_state.gtao_intensity != new_state.gtao_intensity ||
-		old_state.gtao_bias != new_state.gtao_bias ||
-		old_state.gtao_debug_preview != new_state.gtao_debug_preview;
+		old_state.msaa_samples != new_state.msaa_samples;
 }
 
 static int rend_RecreateRenderer(renderer_preferred_state* pref_state)
@@ -94,7 +78,7 @@ static int rend_RecreateRenderer(renderer_preferred_state* pref_state)
 	if (!pref_state)
 		return 0;
 
-	mprintf((0, "Renderer preferred state changed; recreating GL renderer/context from scratch.\n"));
+	mprintf((0, "Renderer framebuffer state changed; recreating GL renderer/context from scratch.\n"));
 
 	if (renderer_inst)
 	{
@@ -715,7 +699,10 @@ int rend_SetPreferredState(renderer_preferred_state* pref_state)
 		return rend_RecreateRenderer(pref_state);
 	}
 
-	return 1;
+	int retval = renderer_inst->SetPreferredState(pref_state);
+	if (retval != 0)
+		Renderer_last_preferred_state = *pref_state;
+	return retval;
 }
 
 // Sets the gamma value 

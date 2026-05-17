@@ -260,6 +260,14 @@ void rend_SetAOClass(int value)
 	renderer_inst->SetAOClass(value);
 }
 
+void rend_SetPostMaskOnly(int state)
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->SetPostMaskOnly(state);
+}
+
 void rend_SetMipState(sbyte state)
 {
 	if (!Renderer_initted)

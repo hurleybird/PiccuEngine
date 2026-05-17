@@ -715,13 +715,18 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	ao_composite_final_source = ao_compositeshader.FindUniform("final_source");
 	ao_composite_scene_source = ao_compositeshader.FindUniform("scene_source");
 	ao_composite_ao_scene_source = ao_compositeshader.FindUniform("ao_scene_source");
+	ao_composite_protection_mask = ao_compositeshader.FindUniform("protection_mask");
+	ao_composite_use_protection_mask = ao_compositeshader.FindUniform("use_protection_mask");
 	if (ao_composite_final_source != -1)
 		glUniform1i(ao_composite_final_source, 0);
 	if (ao_composite_scene_source != -1)
 		glUniform1i(ao_composite_scene_source, 1);
 	if (ao_composite_ao_scene_source != -1)
 		glUniform1i(ao_composite_ao_scene_source, 2);
-	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_scene_source == -1)
+	if (ao_composite_protection_mask != -1)
+		glUniform1i(ao_composite_protection_mask, 3);
+	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_scene_source == -1 ||
+		ao_composite_protection_mask == -1 || ao_composite_use_protection_mask == -1)
 		Error("GLRenderer::Init: Failed to find AO deferred composite uniforms!");
 	ShaderProgram::ClearBinding();
 

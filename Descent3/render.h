@@ -158,7 +158,7 @@ void RenderFace(room *rp,int facenum);
 void RenderSpecularFacesFlat(room *rp);
 
 // Renders fog faces for a room
-void RenderFogFaces(room *rp);
+void RenderFogFaces(room *rp, bool suppress_ao = true);
 
 // Builds a list of mirror faces for each room and allocs memory accordingly
 void ConsolidateMineMirrors();

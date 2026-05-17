@@ -359,6 +359,7 @@ bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, fl
 void rend_SetAOSuppression(float value);
 void rend_SetBloomSuppression(float value);
 void rend_SetAOClass(int value);
+void rend_SetPostMaskOnly(int state);
 
 // Tells the software renderer whether or not to use mipping
 void rend_SetMipState (sbyte state);

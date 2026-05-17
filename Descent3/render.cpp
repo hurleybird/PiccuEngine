@@ -202,6 +202,14 @@ vector Room_fog_plane, Room_fog_portal_vert;
 short Fog_faces[MAX_FACES_PER_ROOM];
 int Num_fog_faces_to_render = 0;
 
+struct deferred_fog_face
+{
+	int roomnum;
+	short facenum;
+};
+
+static std::vector<deferred_fog_face> Deferred_fog_ao_faces;
+
 constexpr int MAX_EXTERNAL_ROOMS = 100;
 vector External_room_corners[MAX_EXTERNAL_ROOMS][8];
 ubyte External_room_codes[MAX_EXTERNAL_ROOMS];
@@ -1689,8 +1697,18 @@ void UpdateFogFace(room* rp, face* fp)
 	Fog_faces[Num_fog_faces_to_render++] = fp - rp->faces;
 }
 
+static void QueueDeferredFogAOFaces(room* rp)
+{
+	if (!Render_preferred_state.gtao_enabled)
+		return;
+
+	int roomnum = rp - Rooms;
+	for (int i = 0; i < Num_fog_faces_to_render; i++)
+		Deferred_fog_ao_faces.push_back({ roomnum, Fog_faces[i] });
+}
+
 // Render a fog layer on top of a face
-void RenderFogFaces(room* rp)
+void RenderFogFaces(room* rp, bool suppress_ao)
 {
 	g3Point* pointlist[MAX_VERTS_PER_FACE];
 	g3Point  pointbuffer[MAX_VERTS_PER_FACE];
@@ -1704,7 +1722,8 @@ void RenderFogFaces(room* rp)
 	rend_SetCoplanarPolygonOffset(1);
 
 	rend_SetFlatColor(GR_RGB((int)(rp->fog_r * 255.0), (int)(rp->fog_g * 255.0), (int)(rp->fog_b * 255.0)));
-	rend_SetAOSuppression(1.0f);
+	if (suppress_ao)
+		rend_SetAOSuppression(1.0f);
 	for (int i = 0; i < Num_fog_faces_to_render; i++)
 	{
 		face* fp = &rp->faces[Fog_faces[i]];
@@ -1755,9 +1774,63 @@ void RenderFogFaces(room* rp)
 			g3_SetTriangulationTest(0);
 	}
 
-	rend_SetAOSuppression(0.0f);
+	if (suppress_ao)
+		rend_SetAOSuppression(0.0f);
 	rend_SetCoplanarPolygonOffset(0);
 	rend_SetZBufferWriteMask(1);
+}
+
+static void RenderDeferredFogAOSuppression()
+{
+	if (Deferred_fog_ao_faces.empty())
+		return;
+
+	PERF_MARKER_SCOPE("RenderMine.DeferredFogAO");
+
+	int old_num_fog_faces = Num_fog_faces_to_render;
+	short old_fog_faces[MAX_FACES_PER_ROOM];
+	for (int i = 0; i < old_num_fog_faces && i < MAX_FACES_PER_ROOM; i++)
+		old_fog_faces[i] = Fog_faces[i];
+
+	int current_roomnum = -1;
+	Num_fog_faces_to_render = 0;
+
+	auto flush_room = [&]()
+	{
+		if (current_roomnum < 0 || Num_fog_faces_to_render <= 0)
+			return;
+
+		room* rp = &Rooms[current_roomnum];
+		int old_wpb_index = rp->wpb_index;
+		rp->wpb_index = 0;
+		RotateRoomPoints(rp, rp->verts);
+		SetupRoomFog(rp, &Viewer_eye, &Viewer_orient, Viewer_roomnum);
+
+		rend_SetPostMaskOnly(1);
+		RenderFogFaces(rp, true);
+		rend_SetPostMaskOnly(0);
+
+		rp->wpb_index = old_wpb_index;
+		Num_fog_faces_to_render = 0;
+	};
+
+	for (size_t i = 0; i < Deferred_fog_ao_faces.size(); i++)
+	{
+		const deferred_fog_face& item = Deferred_fog_ao_faces[i];
+		if (item.roomnum != current_roomnum || Num_fog_faces_to_render >= MAX_FACES_PER_ROOM)
+		{
+			flush_room();
+			current_roomnum = item.roomnum;
+		}
+		Fog_faces[Num_fog_faces_to_render++] = item.facenum;
+	}
+
+	flush_room();
+	Deferred_fog_ao_faces.clear();
+
+	Num_fog_faces_to_render = old_num_fog_faces;
+	for (int i = 0; i < old_num_fog_faces && i < MAX_FACES_PER_ROOM; i++)
+		Fog_faces[i] = old_fog_faces[i];
 }
 
 // MATT!  Change this function to sort by state once you change the scorch system!
@@ -3313,7 +3386,8 @@ void RenderRoom(room* rp)
 
 	if (Num_fog_faces_to_render > 0)
 	{
-		RenderFogFaces(rp);
+		QueueDeferredFogAOFaces(rp);
+		RenderFogFaces(rp, false);
 		Num_fog_faces_to_render = 0;
 	}
 }
@@ -3810,6 +3884,8 @@ void RenderRoomOutline(room* rp)
 void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 {
 	PERF_MARKER_SCOPE(called_from_terrain ? "RenderMine.FromTerrain" : "RenderMine.Main");
+	if (!called_from_terrain)
+		Deferred_fog_ao_faces.clear();
 #ifdef EDITOR
 	In_editor_mode = (GetFunctionMode() == EDITOR_MODE);
 #endif
@@ -3927,6 +4003,8 @@ void RenderMine(int viewer_roomnum, int flag_automap, int called_from_terrain)
 			}
 		}
 	}
+
+	RenderDeferredFogAOSuppression();
 
 	rend_SetOverlayType(OT_NONE);	// turn off lightmap blending
 	if (Must_render_terrain && !Called_from_terrain)

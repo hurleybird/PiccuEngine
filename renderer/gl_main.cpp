@@ -1139,6 +1139,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	GLuint protection_mask_texture = post_protection_mask_dirty ?
 		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
+	GLuint ao_suppression_mask_texture = protection_mask_texture;
 	GLuint ao_class_texture = ao_enabled ?
 		post_protection_mask.AOClassTextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 
@@ -1173,15 +1174,18 @@ bool GL4Renderer::BeginPostPresentFrame()
 			GL4PerfGpuDrain("GPU.GTAO.SceneDepthCopy");
 
 			gtao.Apply(&ao_scene_framebuffer, &ao_scene_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture, ao_class_texture);
+				OpenGL_state, last_projection, near_z, far_z, ao_suppression_mask_texture, ao_class_texture);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
 			ao_compositeshader.Use();
+			glUniform1i(ao_composite_use_protection_mask, ao_suppression_mask_texture != 0 ? 1 : 0);
 			rend_ClearBoundTextures();
 			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 			GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
 			GL_BindFramebufferTexture(ao_scene_framebuffer.ColorTextureForRead(), 2, GL_NEAREST);
+			if (ao_suppression_mask_texture != 0)
+				GL_BindFramebufferTexture(ao_suppression_mask_texture, 3, GL_NEAREST);
 			{
 				PERF_MARKER_SCOPE("GTAO.DeferredComposite");
 				GL_DrawFramebufferQuad(ao_composite_framebuffer.Handle(), 0, 0,
@@ -1196,7 +1200,7 @@ bool GL4Renderer::BeginPostPresentFrame()
 		else
 		{
 			gtao.Apply(present_framebuffer, present_framebuffer, OpenGL_preferred_state,
-				OpenGL_state, last_projection, near_z, far_z, protection_mask_texture, ao_class_texture);
+				OpenGL_state, last_projection, near_z, far_z, ao_suppression_mask_texture, ao_class_texture);
 			GL4PerfGpuDrain("GPU.GTAO.Apply");
 		}
 	}
@@ -1940,6 +1944,29 @@ void GL4Renderer::SetAOClass(int value)
 		GLint ao_class_uniform = current_shader->FindUniform("ao_class_value");
 		if (ao_class_uniform != -1)
 			glUniform1i(ao_class_uniform, ao_class_draw_value);
+	}
+}
+
+void GL4Renderer::SetPostMaskOnly(int state)
+{
+	bool enabled = state != 0;
+	if (enabled == post_mask_only_draw)
+		return;
+
+	post_mask_only_draw = enabled;
+	if (enabled)
+	{
+		glColorMaski(0, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+		glColorMaski(2, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glColorMaski(3, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+	}
+	else
+	{
+		glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glColorMaski(2, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glColorMaski(3, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	}
 }
 

@@ -134,6 +134,8 @@ class GL4Renderer : public IRenderer
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
+	GLint ao_composite_protection_mask = -1;
+	GLint ao_composite_use_protection_mask = -1;
 	GLfloat max_line_width = 1.0f;
 	GLfloat max_point_size = 1.0f;
 
@@ -180,6 +182,7 @@ class GL4Renderer : public IRenderer
 	float ao_suppression_draw_value = 0.0f;
 	float bloom_suppression_draw_value = 0.0f;
 	int ao_class_draw_value = 0;
+	bool post_mask_only_draw = false;
 	bool post_protection_mask_dirty = false;
 	bool post_protection_mask_cleared_this_frame = false;
 	vector per_pixel_light_direction = { 0, 0, -1 };
@@ -243,7 +246,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false, 0.5f, 0.5f, 0.5f, 1.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -487,6 +490,7 @@ public:
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;
+	void SetPostMaskOnly(int state) override;
 
 	// Draws a scaled 2d bitmap to our buffer
 	// NOTE: scripts are expecting the old prototype that has a zvalue (which is ignored) before color

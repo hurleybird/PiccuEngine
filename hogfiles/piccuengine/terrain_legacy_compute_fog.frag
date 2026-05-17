@@ -70,9 +70,22 @@ vec3 ApplyDynamicLightmapLighting(vec3 lightmap_color)
 	return clamp(lightmap_color + dynamic_color, vec3(0.0), vec3(1.0));
 }
 
+vec4 SampleTerrainBaseTexture(vec2 uv, int layer)
+{
+	vec2 tile_origin = floor(uv);
+	vec2 tile_uv = uv - tile_origin;
+	bvec2 upper_edge = bvec2(tile_uv.x <= 0.000001 && uv.x > 0.0, tile_uv.y <= 0.000001 && uv.y > 0.0);
+	tile_uv = mix(tile_uv, vec2(1.0), upper_edge);
+
+	vec2 texel_inset = 0.5 / vec2(textureSize(colortexture, 0).xy);
+	tile_uv = clamp(tile_uv, texel_inset, vec2(1.0) - texel_inset);
+
+	return textureGrad(colortexture, vec3(tile_origin + tile_uv, float(max(layer, 0))), dFdx(uv), dFdy(uv));
+}
+
 void main()
 {
-	vec4 basecolor = texture(colortexture, vec3(outuv.xy / outuv.z, float(max(outtexpage, 0))));
+	vec4 basecolor = SampleTerrainBaseTexture(outuv.xy / outuv.z, outtexpage);
 	vec4 lmcolor = texture(lightmaptexture, vec3(outuv2.xy / outuv2.z, float(clamp(outlmpage, 0, 3))));
 	lmcolor.rgb = ApplyDynamicLightmapLighting(lmcolor.rgb);
 	vec4 litcolor = basecolor * lmcolor * outcolor;

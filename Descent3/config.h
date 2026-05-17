@@ -68,11 +68,15 @@ extern int Game_video_resolution;
 extern int Game_window_res_width, Game_window_res_height;
 extern int Game_window_aspect;
 extern bool Game_fullscreen;
+extern int Game_frame_limit_fps;
 extern float Hud_text_scale;
 //[ISB] yeah it shouldn't be an int but I don't want to deal with include order or include renderer.h in config so..
 extern int DesiredOpenGLProfile;
 extern bool DesiredOpenGLProfileExplicit;
 int ConfigNormalizeSupersamplingFactor(int factor);
+int ConfigGetDesktopRefreshRate();
+int ConfigNormalizeFrameLimitFps(int fps);
+void ConfigApplyFrameLimitSetting();
 float ConfigNormalizeHudTextScale(float scale);
 float ConfigNormalizeBloomThreshold(float threshold);
 float ConfigNormalizeBloomIntensity(float intensity);

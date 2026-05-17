@@ -40,9 +40,15 @@ extern float Render_zoom;
 extern float Render_FOV;
 
 extern bool Game_paused;							//	determines if game is paused.
+extern double Min_allowed_frametime;				// minimum seconds per frame, used for frame limiting
 
 extern bool Rendering_main_view;					// determines if we're rendering the main view
 extern bool Skip_render_game_frame;				// skips rendering the game frame if set.
+
+void SetFrameLimitFps(int fps);
+int GetFrameLimitFps();
+void SetFrameLimitCommandLineOverride(bool enabled);
+bool FrameLimitHasCommandLineOverride();
 
 extern bool Perf_markers_enabled;
 void PerfMarkersSetEnabled(bool enabled);

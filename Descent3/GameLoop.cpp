@@ -134,6 +134,29 @@ bool Game_paused = false;
 
 // Used for limiting the framerate
 double Min_allowed_frametime = 0;
+static int Frame_limit_fps = 0;
+static bool Frame_limit_command_line_override = false;
+
+void SetFrameLimitFps(int fps)
+{
+	Frame_limit_fps = fps > 0 ? fps : 0;
+	Min_allowed_frametime = Frame_limit_fps > 0 ? 1.0 / (double)Frame_limit_fps : 0.0;
+}
+
+int GetFrameLimitFps()
+{
+	return Frame_limit_fps;
+}
+
+void SetFrameLimitCommandLineOverride(bool enabled)
+{
+	Frame_limit_command_line_override = enabled;
+}
+
+bool FrameLimitHasCommandLineOverride()
+{
+	return Frame_limit_command_line_override;
+}
 
 // determines if we're rendering the main view
 bool Rendering_main_view = false;
@@ -2977,23 +3000,34 @@ void GameFrame(void)
 		PerfMarkersEndFrame();
 
 		//float start_delay = timer_GetTime();
+		//Slow down the game if the user asked us to
 		double current_timer = timer_GetTime64();
-		if (Min_allowed_frametime > 0.0)
+		double target_time = last_timer + Min_allowed_frametime;
+		if (current_timer > target_time)
 		{
-			const double target_time = last_timer + Min_allowed_frametime;
-			if (current_timer < target_time)
+			target_time = current_timer;
+		}
+
+		if (current_timer < target_time)
+		{
+			const double wait_time = target_time - current_timer;
+			if (wait_time > 0.0)
 			{
-				unsigned int sleep_time = (unsigned int)((target_time - current_timer) * 1000.0);
-				if (sleep_time > 0)
+				unsigned int sleep_time = (unsigned int)(wait_time * 1000.0);
+				if (Dedicated_server)
 				{
 					Sleep(sleep_time);
-					current_timer = timer_GetTime64();
+				}
+				else if (sleep_time > 2)
+				{
+					Sleep(sleep_time - 2);
 				}
 			}
+			while (timer_GetTime64() < target_time) {}
 		}
 
 		//Compute how long frame took
-		CalcFrameTime(current_timer);
+		CalcFrameTime(target_time);
 
 		//Update Gametime
 		Gametime += Frametime;

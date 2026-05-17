@@ -299,14 +299,15 @@ void PreInitD3Systems()
 	if(iframelmtarg)
 	{
 		Min_allowed_frametime = atoi(GameArgs[iframelmtarg+1]) / 1000.0;
+		SetFrameLimitCommandLineOverride(true);
 		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
 	}
 	else
 	{
 		if(FindArg("-dedicated"))
-			Min_allowed_frametime=1./30;
+			SetFrameLimitFps(30);
 		else
-			Min_allowed_frametime=0;
+			SetFrameLimitFps(0);
 	}
 	iframelmtarg = FindArg("-framecap");
 	if(iframelmtarg)
@@ -314,7 +315,8 @@ void PreInitD3Systems()
 		float cap = atof(GameArgs[iframelmtarg + 1]);
 		if (cap == 0 || cap > 1000) //[ISB] high enough framerates cause the game to eat itself
 			cap = 1000;
-		Min_allowed_frametime = (1.0/cap);
+		SetFrameLimitFps((int)(cap + 0.5f));
+		SetFrameLimitCommandLineOverride(true);
 		mprintf((0,"Using %f as a minimum frametime\n",Min_allowed_frametime));
 	}
 
@@ -423,6 +425,7 @@ void SaveGameSettings()
 	Database->write("RS_windowheight", Game_window_res_height);
 	Database->write("RS_windowaspect", Game_window_aspect);
 	Database->write("RS_fullscreen", Game_fullscreen);
+	Database->write("RS_frame_limit_fps", Game_frame_limit_fps);
 	Database->write("RS_fovdesired", Render_FOV_desired);
 
 	Database->write("RS_bitdepth",Render_preferred_bitdepth);
@@ -672,6 +675,10 @@ void LoadGameSettings()
 	Database->read_int("RS_windowheight", &Game_window_res_height);
 	Database->read_int("RS_windowaspect", &Game_window_aspect);
 	ConfigValidateGameWindowSize();
+	Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(ConfigGetDesktopRefreshRate());
+	Database->read_int("RS_frame_limit_fps", &Game_frame_limit_fps);
+	Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(Game_frame_limit_fps);
+	ConfigApplyFrameLimitSetting();
 	int temp;
 	Database->read_int("RS_fovdesired", &temp);
 	if (temp < D3_DEFAULT_FOV)

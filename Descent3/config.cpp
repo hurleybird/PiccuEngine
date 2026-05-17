@@ -104,6 +104,7 @@ int Game_video_resolution = 1;
 int Game_window_res_width = 1920, Game_window_res_height = 1080;
 int Game_window_aspect = CONFIG_ASPECT_16_9;
 bool Game_fullscreen = false;
+int Game_frame_limit_fps = 0;
 float Hud_text_scale = 1.0f;
 float Render_FOV_desired = 72;
 
@@ -813,6 +814,45 @@ static void ConfigGetDesktopDisplaySize(int* display_width, int* display_height)
 #endif
 }
 
+int ConfigGetDesktopRefreshRate()
+{
+#if defined(SDL3)
+	SDL_DisplayID display = SDL_GetPrimaryDisplay();
+	const SDL_DisplayMode* mode = display ? SDL_GetCurrentDisplayMode(display) : nullptr;
+	if (mode && mode->refresh_rate > 0.0f)
+		return (int)(mode->refresh_rate + 0.5f);
+#elif defined(WIN32)
+	DEVMODE device_mode = {};
+	device_mode.dmSize = sizeof(device_mode);
+	if (EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &device_mode) && device_mode.dmDisplayFrequency > 1)
+		return (int)device_mode.dmDisplayFrequency;
+#endif
+	return 60;
+}
+
+static int ConfigGetFrameLimitMaxFps()
+{
+	const int refresh_rate = ConfigGetDesktopRefreshRate();
+	return refresh_rate > 240 ? refresh_rate : 240;
+}
+
+int ConfigNormalizeFrameLimitFps(int fps)
+{
+	const int min_fps = 30;
+	const int max_fps = ConfigGetFrameLimitMaxFps();
+	if (fps < min_fps)
+		return min_fps;
+	if (fps > max_fps)
+		return max_fps;
+	return fps;
+}
+
+void ConfigApplyFrameLimitSetting()
+{
+	if (!FrameLimitHasCommandLineOverride())
+		SetFrameLimitFps(Game_frame_limit_fps);
+}
+
 static void ConfigResolveDisplayMode(int display_width, int display_height, int desired_height,
 	int desired_aspect, int* resolved_width, int* resolved_height, int* resolved_aspect)
 {
@@ -1064,6 +1104,7 @@ struct video_menu
 	bool* show_fps;
 
 	short* fov;
+	short* frame_limit;
 	char* buffer;
 	char* aspect_buffer;
 	bool* fullscreen;
@@ -1237,6 +1278,12 @@ struct video_menu
 			Render_FOV = Render_FOV_desired;
 			fov_changed = true;
 		}
+		if (frame_limit && sheet->HasChanged(frame_limit))
+		{
+			Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(CALC_SLIDER_INT_VALUE(*frame_limit, 30, ConfigGetFrameLimitMaxFps(), ConfigGetFrameLimitMaxFps() - 30));
+			ConfigApplyFrameLimitSetting();
+			ui_changed = true;
+		}
 
 		if (changed)
 		{
@@ -1272,6 +1319,7 @@ struct video_menu
 		perf_markers = NULL;
 		show_fps = NULL;
 		fov = NULL;
+		frame_limit = NULL;
 		buffer = NULL;
 		aspect_buffer = NULL;
 		fullscreen = NULL;
@@ -1301,30 +1349,38 @@ struct video_menu
 		aspect_buffer = sheet->AddChangeableText(ASPECTBUFFER_SIZE);
 		sheet->NewGroup(NULL, 0, 12);
 		update_display_text();
+		fullscreen = sheet->AddLongCheckBox("Fullscreen", Game_fullscreen);
 		sheet->AddLongButton("Resolution...", IDV_CHANGEWINDOW);
 		sheet->AddLongButton("Aspect...", IDV_CHANGEASPECT);
-		fullscreen = sheet->AddLongCheckBox("Fullscreen", Game_fullscreen);
-		tSliderSettings settings = {};
-		settings.min_val.f = D3_DEFAULT_FOV;
-		settings.max_val.f = 90.f;
-		settings.type = SLIDER_UNITS_FLOAT;
-		fov = sheet->AddSlider("FOV", settings.max_val.f - settings.min_val.f, Render_FOV_desired - D3_DEFAULT_FOV, &settings);
+		sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
-		sheet->NewGroup("OpenGL profile", 0, 80);
+		sheet->NewGroup(NULL, 0, 64);
+		tSliderSettings settings = {};
+		settings.min_val.i = D3_DEFAULT_FOV;
+		settings.max_val.i = 90;
+		settings.type = SLIDER_UNITS_INT;
+		fov = sheet->AddSlider("FOV", settings.max_val.i - settings.min_val.i, Render_FOV_desired - D3_DEFAULT_FOV, &settings);
+		const int frame_limit_max = ConfigGetFrameLimitMaxFps();
+		Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(Game_frame_limit_fps);
+		tSliderSettings frame_limit_settings = {};
+		frame_limit_settings.min_val.i = 30;
+		frame_limit_settings.max_val.i = frame_limit_max;
+		frame_limit_settings.type = SLIDER_UNITS_INT;
+		frame_limit = sheet->AddSlider("Frame Limit", (short)(frame_limit_max - 30),
+			(short)(Game_frame_limit_fps - 30), &frame_limit_settings);
+
+		sheet->NewGroup("OpenGL profile", 0, 134);
 		backend = sheet->AddFirstLongRadioButton("Compat (for NV)");
 		sheet->AddLongRadioButton("Core (for AMD)");
 		*backend = DesiredOpenGLProfile;
 
 		// video settings
-		sheet->NewGroup(TXT_TOGGLES, 0, 120);
+		sheet->NewGroup(TXT_TOGGLES, 0, 170);
 		filtering = sheet->AddLongCheckBox(TXT_BILINEAR, (Render_preferred_state.filtering != 0));
 		mipmapping = sheet->AddLongCheckBox(TXT_MIPMAPPING, (Render_preferred_state.mipping != 0));
 		per_pixel_lighting = sheet->AddLongCheckBox("Per-pixel lighting",
 			ConfigCanUsePerPixelLighting() && Render_preferred_state.per_pixel_lighting);
 		bloom_enabled = sheet->AddLongCheckBox("Bloom", Render_preferred_state.bloom_enabled);
-
-		sheet->NewGroup(TXT_MONITOR, 0, 188);
-		sheet->AddLongButton(TXT_AUTO_GAMMA, IDV_AUTOGAMMA);
 
 		sheet->NewGroup("MSAA", 184, 0);
 		int iTemp = MsaaSamplesToIndex(Render_preferred_state.msaa_samples);
@@ -1348,7 +1404,7 @@ struct video_menu
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 
-		sheet->NewGroup(NULL, 0, 252);
+		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
 
@@ -1389,6 +1445,11 @@ struct video_menu
 		}
 		if (supersampling)
 			Render_preferred_state.supersampling_factor = (ubyte)SupersamplingIndexToFactor(*supersampling);
+		if (frame_limit)
+		{
+			Game_frame_limit_fps = ConfigNormalizeFrameLimitFps(CALC_SLIDER_INT_VALUE(*frame_limit, 30, ConfigGetFrameLimitMaxFps(), ConfigGetFrameLimitMaxFps() - 30));
+		}
+		ConfigApplyFrameLimitSetting();
 
 		Render_FOV_desired = fov[0] + D3_DEFAULT_FOV;
 		if (Render_FOV != Render_FOV_desired)

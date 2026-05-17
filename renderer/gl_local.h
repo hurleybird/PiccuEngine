@@ -89,7 +89,6 @@ class GL4Renderer : public IRenderer
 	Framebuffer bloom_source_framebuffer;
 	Framebuffer bloom_source_resolved_framebuffer;
 	Framebuffer bloom_source_downscale_framebuffer;
-	Framebuffer ao_depth_source_framebuffer;
 	Framebuffer ao_scene_framebuffer;
 	Framebuffer ao_composite_framebuffer;
 	Framebuffer post_present_framebuffer;
@@ -97,28 +96,11 @@ class GL4Renderer : public IRenderer
 	PostProtectionMaskResources post_protection_mask;
 	int framebuffer_current_draw = 0;
 	bool bloom_source_valid = false;
-	bool ao_depth_source_valid = false;
-	bool ao_depth_capture_active = false;
-	int ao_depth_visible_x = 0;
-	int ao_depth_visible_y = 0;
-	int ao_depth_visible_w = 0;
-	int ao_depth_visible_h = 0;
-	float ao_depth_projection[16] = {};
-	bool ao_depth_projection_valid = false;
-	GLint ao_depth_saved_read = 0;
-	GLint ao_depth_saved_draw = 0;
-	GLint ao_depth_saved_viewport[4] = {};
-	GLboolean ao_depth_saved_color_mask[4] = {};
-	GLboolean ao_depth_saved_depth_mask = GL_TRUE;
-	GLboolean ao_depth_saved_blend = GL_FALSE;
-	GLboolean ao_depth_saved_cull = GL_FALSE;
-	GLboolean ao_depth_saved_scissor = GL_FALSE;
-	GLboolean ao_depth_saved_multisample = GL_FALSE;
-	int ao_depth_saved_clip_x1 = 0;
-	int ao_depth_saved_clip_y1 = 0;
-	int ao_depth_saved_clip_x2 = 0;
-	int ao_depth_saved_clip_y2 = 0;
 	bool ao_scene_valid = false;
+	int framebuffer_logical_width = 0;
+	int framebuffer_logical_height = 0;
+	int framebuffer_logical_offset_x = 0;
+	int framebuffer_logical_offset_y = 0;
 	bool post_present_pending_swap = false;
 	int msaa_downshift_release_frames = 0;
 	int msaa_forced_off_target_samples = 0;
@@ -139,8 +121,10 @@ class GL4Renderer : public IRenderer
 	//Cached projection matrix and near/far for GTAO. Updated on every
 	//UpdateCommon(depth=0) call so the AO pass uses the main world projection.
 	float last_projection[16] = {};
+	float captured_scene_projection[16] = {};
 	float last_nearz = 1.0f;
 	float last_farz = 10000.f;
+	bool captured_scene_projection_valid = false;
 	float current_view_projection[16] = {};
 	float current_inverse_view_projection[16] = {};
 	float previous_view_projection[16] = {};
@@ -150,6 +134,8 @@ class GL4Renderer : public IRenderer
 	//Temp shader to test the shader systems.
 	ShaderProgram testshader;
 	GLint blitshader_gamma = -1;
+	GLint blitshader_uv_origin = -1;
+	GLint blitshader_uv_scale = -1;
 	GLint downsampleshader_gamma = -1;
 	GLint downsampleshader_dest_origin = -1;
 	GLint motionvector_screen_size = -1;
@@ -271,7 +257,7 @@ class GL4Renderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false, 0.5f, 0.5f, 0.5f, 1.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;
@@ -512,8 +498,6 @@ public:
 	void BeginMotionObject(int object_handle, float screen_x, float screen_y) override;
 	void EndMotionObject() override;
 	bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) override;
-	bool BeginAODepthFrame(int visible_width, int visible_height, float* zoom_scale) override;
-	void EndAODepthFrame() override;
 	void SetAOSuppression(float value) override;
 	void SetBloomSuppression(float value) override;
 	void SetAOClass(int value) override;

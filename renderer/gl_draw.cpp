@@ -158,8 +158,7 @@ void GL4Renderer::DestroyMotionVectorDraw()
 void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0 ||
-		ao_depth_capture_active)
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || nv <= 0)
 	{
 		return;
 	}
@@ -214,8 +213,7 @@ void GL4Renderer::DrawMotionVectorPolygon(int nv, g3Point** p)
 void GL4Renderer::DrawMotionVectorTriangles(const gl_motion_vertex* vertices, int nv)
 {
 	if (!motion_object_active || motionvectorshader.Handle() == 0 ||
-		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0 ||
-		ao_depth_capture_active)
+		motionvector_vao == 0 || motion_vectors.velocity_texture == 0 || !vertices || nv <= 0)
 	{
 		return;
 	}
@@ -542,7 +540,7 @@ void GL4Renderer::SelectDrawShader()
 	if (drawshader_ao_weight_uniforms[shader_index] != -1)
 		glUniform1f(drawshader_ao_weight_uniforms[shader_index], ao_weight_draw_value);
 	if (drawshader_ao_capture_weight_mode_uniforms[shader_index] != -1)
-		glUniform1i(drawshader_ao_capture_weight_mode_uniforms[shader_index], ao_depth_capture_active ? 1 : 0);
+		glUniform1i(drawshader_ao_capture_weight_mode_uniforms[shader_index], 0);
 	if (drawshader_post_mask_luminance_uniforms[shader_index] != -1)
 	{
 		bool use_luminance =

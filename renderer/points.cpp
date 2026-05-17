@@ -25,16 +25,16 @@ ubyte g3_CodePoint(g3Point *p)
 {
 	ubyte cc=0;
 
-	if (p->p3_x > p->p3_z)
+	if (p->p3_x > p->p3_z * Window_clip_right)
 		cc |= CC_OFF_RIGHT;
 
-	if (p->p3_y > p->p3_z)
+	if (p->p3_y > p->p3_z * Window_clip_top)
 		cc |= CC_OFF_TOP;
 
-	if (p->p3_x < -p->p3_z)
+	if (p->p3_x < -p->p3_z * Window_clip_left)
 		cc |= CC_OFF_LEFT;
 
-	if (p->p3_y < -p->p3_z)
+	if (p->p3_y < -p->p3_z * Window_clip_bot)
 		cc |= CC_OFF_BOT;
 
 	if (p->p3_z < 0)
@@ -87,8 +87,8 @@ void g3_ProjectPoint(g3Point *p)
 		return;
 
 	float one_over_z=1.0/p->p3_z;
-	p->p3_sx = Window_w2 + (p->p3_x * (Window_w2 * one_over_z));
-	p->p3_sy = Window_h2 - (p->p3_y * (Window_h2 * one_over_z));
+	p->p3_sx = Window_cx + (p->p3_x * (Window_w2 * one_over_z));
+	p->p3_sy = Window_cy - (p->p3_y * (Window_h2 * one_over_z));
 	p->p3_flags |= PF_PROJECTED;
 }
 
@@ -98,8 +98,8 @@ void g3_Point2Vec(vector *v,short sx,short sy)
 	vector tempv;
 	matrix tempm;
 
-	tempv.x =  (((sx - Window_w2) / Window_w2) * Matrix_scale.z / Matrix_scale.x);
-	tempv.y = -(((sy - Window_h2) / Window_h2) * Matrix_scale.z / Matrix_scale.y);
+	tempv.x =  (((sx - Window_cx) / Window_w2) * Matrix_scale.z / Matrix_scale.x);
+	tempv.y = -(((sy - Window_cy) / Window_h2) * Matrix_scale.z / Matrix_scale.y);
 	tempv.z = 1.0f;
 
 	vm_NormalizeVector(&tempv);

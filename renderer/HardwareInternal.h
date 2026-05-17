@@ -36,6 +36,8 @@ void CheckTempPoints();
 
 extern int Window_width,Window_height;		//the actual integer width & height
 extern float Window_w2,Window_h2;	  		//width,height/2
+extern float Window_cx,Window_cy;	  		//projection center
+extern float Window_clip_left,Window_clip_right,Window_clip_top,Window_clip_bot;
 extern float View_zoom;
 extern vector View_position,Matrix_scale;
 extern matrix View_matrix,Unscaled_matrix;

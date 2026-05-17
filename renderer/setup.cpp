@@ -44,13 +44,22 @@ void g3_SetAspectRatio(float aspect)
 	sAspect = aspect;
 }
 
-void g3_GetProjectionMatrix( float zoom, float *projMat )
+static void g3_GetProjectionMatrixAnchored(float zoom, float *projMat,
+										   int anchor_x, int anchor_y, int anchor_w, int anchor_h)
 {
 	// get window size
 	int viewportWidth, viewportHeight;
 	rend_GetProjectionParameters( &viewportWidth, &viewportHeight );
 
-	float s = ((float)viewportWidth / viewportHeight);
+	if (anchor_w <= 0 || anchor_h <= 0)
+	{
+		anchor_x = 0;
+		anchor_y = 0;
+		anchor_w = viewportWidth;
+		anchor_h = viewportHeight;
+	}
+
+	float s = ((float)anchor_w / anchor_h);
 
 	// setup the matrix
 	memset( projMat, 0, sizeof(float) * 16 );
@@ -68,16 +77,27 @@ void g3_GetProjectionMatrix( float zoom, float *projMat )
 	float D = -((2 * zfar * znear) / (zfar - znear));
 
 	// fill in the matrix
+	float x_scale;
+	float y_scale;
 	if (s <= 1.0f)
 	{
-		projMat[0] = oOT;
-		projMat[5] = oOT * s;
+		x_scale = oOT;
+		y_scale = oOT * s;
 	}
 	else
 	{
-		projMat[0] = oOT / s;
-		projMat[5] = oOT;
+		x_scale = oOT / s;
+		y_scale = oOT;
 	}
+	projMat[0] = x_scale * ((float)anchor_w / viewportWidth);
+	projMat[5] = y_scale * ((float)anchor_h / viewportHeight);
+
+	const float center_x = (float)anchor_x + (float)anchor_w * 0.5f;
+	const float center_y = (float)anchor_y + (float)anchor_h * 0.5f;
+	const float center_ndc_x = (center_x * 2.0f / (float)viewportWidth) - 1.0f;
+	const float center_ndc_y = 1.0f - (center_y * 2.0f / (float)viewportHeight);
+	projMat[8] = -center_ndc_x;
+	projMat[9] = -center_ndc_y;
 	projMat[10] = C;
 	projMat[11] = -1;
 	projMat[14] = D;
@@ -86,13 +106,18 @@ void g3_GetProjectionMatrix( float zoom, float *projMat )
 	projMat[14] = -1.0f;*/
 }
 
-//start the frame
-void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom)
+void g3_GetProjectionMatrix( float zoom, float *projMat )
+{
+	g3_GetProjectionMatrixAnchored(zoom, projMat, 0, 0, 0, 0);
+}
+
+static void g3_StartFrameInternal(vector *view_pos,matrix *view_matrix,float zoom,
+								  int anchor_x, int anchor_y, int anchor_w, int anchor_h)
 {
 	PolymodelMotionStartFrame();
 
 	// initialize the viewport transform
-	g3_GetProjectionMatrix( zoom, gTransformProjection );
+	g3_GetProjectionMatrixAnchored( zoom, gTransformProjection, anchor_x, anchor_y, anchor_w, anchor_h );
 	g3_GetModelViewMatrix( view_pos, view_matrix, gTransformModelView );
 	g3_UpdateFullTransform();
 
@@ -101,14 +126,27 @@ void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom)
 
 	// get window size
 	rend_GetProjectionParameters( &Window_width, &Window_height );
+	if (anchor_w <= 0 || anchor_h <= 0)
+	{
+		anchor_x = 0;
+		anchor_y = 0;
+		anchor_w = Window_width;
+		anchor_h = Window_height;
+	}
 
 	//Set vars for projection
-	Window_w2 = ((float)Window_width)  * 0.5f;
-	Window_h2 = ((float)Window_height) * 0.5f;
+	Window_w2 = ((float)anchor_w)  * 0.5f;
+	Window_h2 = ((float)anchor_h) * 0.5f;
+	Window_cx = ((float)anchor_x) + Window_w2;
+	Window_cy = ((float)anchor_y) + Window_h2;
+	Window_clip_left = Window_w2 > 0.0f ? Window_cx / Window_w2 : 1.0f;
+	Window_clip_right = Window_w2 > 0.0f ? ((float)Window_width - Window_cx) / Window_w2 : 1.0f;
+	Window_clip_top = Window_h2 > 0.0f ? Window_cy / Window_h2 : 1.0f;
+	Window_clip_bot = Window_h2 > 0.0f ? ((float)Window_height - Window_cy) / Window_h2 : 1.0f;
 
 	//float s = screen_aspect * (float) Window_height / (float) Window_width;
 	//[ISB] Just use the aspect of the window, the screen aspect is not important since pixels are all square
-	float s = ((float)Window_width / Window_height);// / (4.f / 3.f);
+	float s = ((float)anchor_w / anchor_h);// / (4.f / 3.f);
 
 	if( s <= 1.0f )
 	{
@@ -148,6 +186,18 @@ void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom)
 
 	//Reset the far clip plane
 	g3_ResetFarClipZ();
+}
+
+//start the frame
+void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom)
+{
+	g3_StartFrameInternal(view_pos, view_matrix, zoom, 0, 0, 0, 0);
+}
+
+void g3_StartFrameAnchored(vector *view_pos,matrix *view_matrix,float zoom,
+						   int anchor_x,int anchor_y,int anchor_w,int anchor_h)
+{
+	g3_StartFrameInternal(view_pos, view_matrix, zoom, anchor_x, anchor_y, anchor_w, anchor_h);
 }
 
 //this doesn't do anything, but is here for completeness

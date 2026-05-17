@@ -286,6 +286,8 @@ struct BloomResources
 	GLint composite_intensity = -1;
 	GLint composite_use_alpha_mask = -1;
 	GLint composite_use_protection_mask = -1;
+	GLint composite_uv_origin = -1;
+	GLint composite_uv_scale = -1;
 
 	void InitShaders();
 	void DestroyShaders();
@@ -341,6 +343,7 @@ struct GTAOResources
 	GLint ao_inv_screen_size = -1;  //1/width, 1/height
 	GLint ao_ao_inv_screen_size = -1;
 	GLint ao_screen_size = -1;      //width, height
+	GLint ao_noise_origin = -1;
 	GLint ao_directions = -1;
 	GLint ao_steps = -1;
 	GLint ao_terrain_occlusion = -1;
@@ -391,7 +394,8 @@ struct GTAOResources
 		float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_weight_texture,
 		bool ao_weight_is_direct,
 		int source_visible_x = 0, int source_visible_y = 0,
-		int source_visible_w = 0, int source_visible_h = 0);
+		int source_visible_w = 0, int source_visible_h = 0,
+		int noise_origin_x = 0, int noise_origin_y = 0);
 };
 
 inline int RendererSupersamplingFactor(const renderer_preferred_state& state)

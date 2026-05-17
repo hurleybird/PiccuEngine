@@ -280,7 +280,7 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 			glUniform1f(ao_weight_uniform, ao_weight_draw_value);
 		GLint ao_capture_weight_mode_uniform = gl_shaderprogs[handle].FindUniform("ao_capture_weight_mode");
 		if (ao_capture_weight_mode_uniform != -1)
-			glUniform1i(ao_capture_weight_mode_uniform, ao_depth_capture_active ? 1 : 0);
+			glUniform1i(ao_capture_weight_mode_uniform, 0);
 	}
 }
 
@@ -295,18 +295,10 @@ void GL4Renderer::UpdateCommon(float* projection, float* modelview, int depth)
 	//for ambient occlusion (it runs against the main framebuffer only).
 	if (depth == 0)
 	{
-		if (ao_depth_capture_active)
-		{
-			memcpy(ao_depth_projection, projection, sizeof(ao_depth_projection));
-			ao_depth_projection_valid = true;
-		}
-		else
-		{
-			memcpy(last_projection, projection, sizeof(last_projection));
-			g3_Mat4Multiply(current_view_projection, projection, modelview);
-			have_current_view_projection = true;
-			have_current_inverse_view_projection = InvertMatrix4(current_view_projection, current_inverse_view_projection);
-		}
+		memcpy(last_projection, projection, sizeof(last_projection));
+		g3_Mat4Multiply(current_view_projection, projection, modelview);
+		have_current_view_projection = true;
+		have_current_inverse_view_projection = InvertMatrix4(current_view_projection, current_inverse_view_projection);
 	}
 
 	glBindBuffer(GL_COPY_WRITE_BUFFER, commonbuffername);

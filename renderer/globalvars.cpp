@@ -38,6 +38,12 @@ int		Window_height;			//the actual height
 
 float	Window_w2;				//width/2
 float	Window_h2;				//height/2
+float	Window_cx;				//projection center x
+float	Window_cy;				//projection center y
+float	Window_clip_left = 1.0f;
+float	Window_clip_right = 1.0f;
+float	Window_clip_top = 1.0f;
+float	Window_clip_bot = 1.0f;
 
 float gTransformProjection[16];
 float gTransformModelView[16];

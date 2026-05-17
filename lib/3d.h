@@ -170,6 +170,10 @@ void g3_Close(void);
 //start the frame, specifying view position, matrix, & zoom
 void g3_StartFrame(vector *view_pos,matrix *view_matrix,float zoom);
 
+//start the frame with an anchored projection inside a larger viewport
+void g3_StartFrameAnchored(vector *view_pos,matrix *view_matrix,float zoom,
+						   int anchor_x,int anchor_y,int anchor_w,int anchor_h);
+
 //end the frame
 void g3_EndFrame(void);
 

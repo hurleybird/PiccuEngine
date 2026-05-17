@@ -165,7 +165,7 @@ class GLCompatibilityRenderer : public IRenderer
 	GLuint fbVBOName = 0;
 
 	//INIT
-	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, false, 0.5f, 0.5f, 0.5f, 1.0f };
+	renderer_preferred_state OpenGL_preferred_state = { false, true, false, 32, 1.0, 0, 0, 0, 0, false, 1, 0, false, false, 0.75f, 0.75f, 0.75f, false, GTAO_RESOLUTION_HALF, 128, 6, 4.0f, 2.5f, 0.25f, 107, false, 0.5f, 0.5f, 0.5f, 1.0f };
 	rendering_state OpenGL_state = {};
 
 	bool OpenGL_debugging_enabled = false;

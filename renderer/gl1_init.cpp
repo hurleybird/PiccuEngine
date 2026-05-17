@@ -460,6 +460,12 @@ int GLCompatibilityRenderer::Init(oeApplication* app, renderer_preferred_state* 
 	blitshader_gamma = blitshader.FindUniform("gamma");
 	if (blitshader_gamma == -1)
 		Error("rend_Init: Failed to find gamma uniform!");
+	GLint blitshader_uv_origin = blitshader.FindUniform("uv_origin");
+	GLint blitshader_uv_scale = blitshader.FindUniform("uv_scale");
+	if (blitshader_uv_origin != -1)
+		glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+	if (blitshader_uv_scale != -1)
+		glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
 
 	downsampleshader.AttachSource(blitVertexSrc, downsampleFragmentSrc);
 	downsampleshader.Use();

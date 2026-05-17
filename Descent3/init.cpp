@@ -385,6 +385,7 @@ void SaveGameSettings()
 	Database->write("RS_bloom_spread", tempbuffer, strlen(tempbuffer) + 1);
 	Database->write("RS_gtao_enabled", Render_preferred_state.gtao_enabled);
 	Database->write("RS_gtao_resolution", Render_preferred_state.gtao_resolution);
+	Database->write("RS_gtao_overscan_percent", Render_preferred_state.gtao_overscan_percent);
 	Database->write("RS_gtao_debug_preview", Render_preferred_state.gtao_debug_preview);
 	tempint = Use_motion_blur ? 1 : 0;
 	Database->write("RS_motion_blur_type", tempint);
@@ -558,6 +559,7 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_radius = 4.0f;
 	Render_preferred_state.gtao_intensity = 2.5f;
 	Render_preferred_state.gtao_bias = 0.25f;
+	Render_preferred_state.gtao_overscan_percent = 107;
 	Render_preferred_state.gtao_debug_preview = false;
 	Render_preferred_state.gtao_terrain_occlusion = 0.5f;
 	Render_preferred_state.gtao_polyobject_occlusion = 0.5f;
@@ -743,6 +745,11 @@ void LoadGameSettings()
 	Render_preferred_state.gtao_resolution = (ubyte)tempint;
 	if (Render_preferred_state.gtao_resolution == GTAO_RESOLUTION_AUTO)
 		Render_preferred_state.gtao_resolution = GTAO_RESOLUTION_HALF;
+	tempint = Render_preferred_state.gtao_overscan_percent;
+	Database->read_int("RS_gtao_overscan_percent", &tempint);
+	if (tempint < 100) tempint = 100;
+	if (tempint > 150) tempint = 150;
+	Render_preferred_state.gtao_overscan_percent = (ushort)tempint;
 	Database->read("RS_gtao_debug_preview", &Render_preferred_state.gtao_debug_preview);
 	saved_motion_blur_type = 0;
 	saved_motion_blur_type_present = Database->read_int("RS_motion_blur_type", &saved_motion_blur_type);

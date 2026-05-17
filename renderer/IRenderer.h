@@ -188,8 +188,6 @@ public:
 	virtual void BeginMotionObject(int object_handle, float screen_x, float screen_y) {}
 	virtual void EndMotionObject() {}
 	virtual bool ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, float *screen_y) { return false; }
-	virtual bool BeginAODepthFrame(int visible_width, int visible_height, float* zoom_scale) { return false; }
-	virtual void EndAODepthFrame() {}
 	virtual void SetAOSuppression(float value) {}
 	virtual void SetBloomSuppression(float value) {}
 	virtual void SetAOClass(int value) {}

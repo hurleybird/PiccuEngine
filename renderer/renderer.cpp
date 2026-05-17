@@ -236,22 +236,6 @@ bool rend_ProjectPreviousFramePoint(const vector *world_pos, float *screen_x, fl
 	return renderer_inst->ProjectPreviousFramePoint(world_pos, screen_x, screen_y);
 }
 
-bool rend_BeginAODepthFrame(int visible_width, int visible_height, float* zoom_scale)
-{
-	if (!Renderer_initted)
-		return false;
-
-	return renderer_inst->BeginAODepthFrame(visible_width, visible_height, zoom_scale);
-}
-
-void rend_EndAODepthFrame()
-{
-	if (!Renderer_initted)
-		return;
-
-	renderer_inst->EndAODepthFrame();
-}
-
 void rend_SetAOSuppression(float value)
 {
 	if (!Renderer_initted)

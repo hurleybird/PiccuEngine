@@ -222,7 +222,7 @@ g3Point *ClipCustomEdge( g3Point *on_pnt, g3Point *off_pnt )
 //clips an edge against one plane. 
 g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 {
-	float a,b,k;
+	float a,b,k,clip_scale;
 	g3Point *tmp;
 
 	//compute clipping value k = (xs-zs) / (xs-xe-zs+ze)
@@ -242,11 +242,13 @@ g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 	{
 		a = on_pnt->p3_x;
 		b = off_pnt->p3_x;
+		clip_scale = (plane_flag & CC_OFF_RIGHT) ? Window_clip_right : Window_clip_left;
 	}
 	else
 	{
 		a = on_pnt->p3_y;
 		b = off_pnt->p3_y;
+		clip_scale = (plane_flag & CC_OFF_TOP) ? Window_clip_top : Window_clip_bot;
 	}
 
 	if (plane_flag & (CC_OFF_LEFT | CC_OFF_BOT))
@@ -255,26 +257,14 @@ g3Point *ClipEdge( int plane_flag, g3Point *on_pnt, g3Point *off_pnt )
 		b = -b;
 	}
 
-	k = (a - on_pnt->p3_z) / ((a - on_pnt->p3_z) - b + off_pnt->p3_z);	//(xs-zs) / (xs-zs-xe+ze)
+	k = (a - on_pnt->p3_z * clip_scale) /
+		((a - on_pnt->p3_z * clip_scale) - (b - off_pnt->p3_z * clip_scale));
 
 	tmp = GetTempPoint();
 
 	tmp->p3_x = on_pnt->p3_x + ((off_pnt->p3_x-on_pnt->p3_x) * k);
 	tmp->p3_y = on_pnt->p3_y + ((off_pnt->p3_y-on_pnt->p3_y) * k);
-
-	if (plane_flag & (CC_OFF_TOP|CC_OFF_BOT))
-	{
-		tmp->p3_z = tmp->p3_y;
-	}
-	else
-	{
-		tmp->p3_z = tmp->p3_x;
-	}
-
-	if (plane_flag & (CC_OFF_LEFT|CC_OFF_BOT))
-	{
-		tmp->p3_z = -tmp->p3_z;
-	}
+	tmp->p3_z = on_pnt->p3_z + ((off_pnt->p3_z-on_pnt->p3_z) * k);
 	tmp->p3_vecPreRot = on_pnt->p3_vecPreRot + ((off_pnt->p3_vecPreRot-on_pnt->p3_vecPreRot) * k);
 	if (on_pnt->p3_motion_valid && off_pnt->p3_motion_valid)
 	{

@@ -2084,7 +2084,8 @@ void ProcessKeys()
 extern void DrawRoomVisPnts(object* obj);
 #endif
 
-void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, float zoom, bool rear_view)
+void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, matrix* viewer_orient, float zoom, bool rear_view,
+					 int anchor_x, int anchor_y, int anchor_w, int anchor_h)
 {
 	PERF_MARKER_SCOPE("GameRenderWorld");
 	matrix temp_orient, save_orient;
@@ -2102,7 +2103,10 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 	//Start the 3D
 	{
 		PERF_MARKER_SCOPE("g3_StartFrame.World");
-		g3_StartFrame(viewer_eye, viewer_orient, zoom);
+		if (anchor_w > 0 && anchor_h > 0)
+			g3_StartFrameAnchored(viewer_eye, viewer_orient, zoom, anchor_x, anchor_y, anchor_w, anchor_h);
+		else
+			g3_StartFrame(viewer_eye, viewer_orient, zoom);
 	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_WORLD_START);
 
@@ -2150,6 +2154,41 @@ void GameRenderWorld(object* viewer, vector* viewer_eye, int viewer_roomnum, mat
 
 }
 
+static void GetMainViewOverscanFrame(int* x1, int* y1, int* x2, int* y2, int* anchor_x, int* anchor_y)
+{
+	*x1 = Game_window_x;
+	*y1 = Game_window_y;
+	*x2 = Game_window_x + Game_window_w;
+	*y2 = Game_window_y + Game_window_h;
+	*anchor_x = 0;
+	*anchor_y = 0;
+
+	if (!Render_preferred_state.gtao_enabled)
+		return;
+
+	int overscan_percent = Render_preferred_state.gtao_overscan_percent;
+	if (overscan_percent < 100)
+		overscan_percent = 100;
+	if (overscan_percent > 150)
+		overscan_percent = 150;
+	if (overscan_percent <= 100 || Game_window_w <= 0 || Game_window_h <= 0)
+		return;
+
+	const int overscan_w = (Game_window_w * overscan_percent + 99) / 100;
+	const int overscan_h = (Game_window_h * overscan_percent + 99) / 100;
+	const int extra_w = overscan_w - Game_window_w;
+	const int extra_h = overscan_h - Game_window_h;
+	const int left = (extra_w + 1) / 2;
+	const int top = (extra_h + 1) / 2;
+
+	*x1 = Game_window_x - left;
+	*y1 = Game_window_y - top;
+	*x2 = Game_window_x + Game_window_w + (extra_w - left);
+	*y2 = Game_window_y + Game_window_h + (extra_h - top);
+	*anchor_x = left;
+	*anchor_y = top;
+}
+
 //Render into the big window
 void GameDrawMainView()
 {
@@ -2162,9 +2201,13 @@ void GameDrawMainView()
 	DebugBlockPrint("SR");
 
 	//Start rendering
+	int main_view_x1, main_view_y1, main_view_x2, main_view_y2;
+	int main_view_anchor_x, main_view_anchor_y;
+	GetMainViewOverscanFrame(&main_view_x1, &main_view_y1, &main_view_x2, &main_view_y2,
+		&main_view_anchor_x, &main_view_anchor_y);
 	{
 		PERF_MARKER_SCOPE("StartFrame.MainView");
-		StartFrame(true);
+		StartFrame(main_view_x1, main_view_y1, main_view_x2, main_view_y2, true);
 	}
 
 	// Set guided view
@@ -2176,14 +2219,12 @@ void GameDrawMainView()
 	else if ((Viewer_object == Player_object) && (Players[Player_num].flags & PLAYER_FLAGS_REARVIEW))
 		rear_view = 1;
 
-	object* render_viewer = Viewer_object;
-	bool render_rear_view = rear_view;
-
 	//Draw the world
 	Rendering_main_view = true;
 	{
 		PERF_MARKER_SCOPE("GameRenderWorld.MainView");
-		GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient, Render_zoom, rear_view);
+		GameRenderWorld(Viewer_object, &Viewer_object->pos, Viewer_object->roomnum, &Viewer_object->orient,
+			Render_zoom, rear_view, main_view_anchor_x, main_view_anchor_y, Game_window_w, Game_window_h);
 	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_MAIN_WORLD);
 	Rendering_main_view = false;
@@ -2218,20 +2259,6 @@ void GameDrawMainView()
 		rend_CaptureBloomSource();
 	}
 	rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_CAPTURE_BLOOM);
-
-	if (render_viewer)
-	{
-		float ao_zoom_scale = 1.0f;
-		if (rend_BeginAODepthFrame(Game_window_w, Game_window_h, &ao_zoom_scale))
-		{
-			PERF_MARKER_SCOPE("GameRenderWorld.AODepth");
-			Rendering_main_view = true;
-			GameRenderWorld(render_viewer, &render_viewer->pos, render_viewer->roomnum,
-				&render_viewer->orient, Render_zoom * ao_zoom_scale, render_rear_view);
-			Rendering_main_view = false;
-			rend_EndAODepthFrame();
-		}
-	}
 
 	//We're done with this window
 	{

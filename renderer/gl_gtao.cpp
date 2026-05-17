@@ -198,6 +198,7 @@ void GTAOResources::InitShaders()
 	ao_inv_screen_size = ao_shader.FindUniform("inv_screen_size");
 	ao_ao_inv_screen_size = ao_shader.FindUniform("ao_inv_screen_size");
 	ao_screen_size = ao_shader.FindUniform("screen_size");
+	ao_noise_origin = ao_shader.FindUniform("noise_origin");
 	ao_directions = ao_shader.FindUniform("directions");
 	ao_steps = ao_shader.FindUniform("steps");
 	ao_terrain_occlusion = ao_shader.FindUniform("terrain_ao_occlusion");
@@ -319,7 +320,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	const rendering_state& render_state, const float* projection,
 	float nearz, float farz, GLuint suppression_mask_texture, GLuint ao_weight_texture,
 	bool ao_weight_is_direct,
-	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h)
+	int source_visible_x, int source_visible_y, int source_visible_w, int source_visible_h,
+	int noise_origin_x, int noise_origin_y)
 {
 	if (!source || !pref_state.gtao_enabled)
 	{
@@ -356,12 +358,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		source_visible_x != 0 || source_visible_y != 0 ||
 		source_visible_w != source_width || source_visible_h != source_height;
 
-	int ao_base_width = use_source_visible_rect ?
-		source_width :
-		(render_state.screen_width > 0 ? render_state.screen_width : source_width);
-	int ao_base_height = use_source_visible_rect ?
-		source_height :
-		(render_state.screen_height > 0 ? render_state.screen_height : source_height);
+	int ao_base_width = source_width;
+	int ao_base_height = source_height;
 	if (ao_base_width <= 0 || ao_base_height <= 0)
 	{
 		ao_base_width = source_width;
@@ -454,7 +452,11 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 	//Equivalent to: r_pixels = radius * 0.5 * (h / tan(fov/2)).
 	//Since m11 = 1 / tan(half_y_fov_with_aspect_compensation), pixel size is:
 	float radius_pixels = radius * 0.5f * (float)ao_height * m11;
-	float max_radius_pixels = 128.0f * sqrtf((float)(ao_width * ao_height) / (1080.0f * 1920.0f));
+	const int visible_width = render_state.screen_width > 0 ? render_state.screen_width : source_width;
+	const int visible_height = render_state.screen_height > 0 ? render_state.screen_height : source_height;
+	const int visible_ao_width = (visible_width + ao_scale - 1) / ao_scale;
+	const int visible_ao_height = (visible_height + ao_scale - 1) / ao_scale;
+	float max_radius_pixels = 128.0f * sqrtf((float)(visible_ao_width * visible_ao_height) / (1080.0f * 1920.0f));
 	if (max_radius_pixels < 16.0f) max_radius_pixels = 16.0f;
 
 	float neg_inv_r2 = -1.0f / (radius * radius);
@@ -507,8 +509,8 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		glUniform4f(ao_proj_info,
 			2.0f / m00,
 			2.0f / m11,
-			-1.0f / m00,
-			-1.0f / m11);
+			(projection[8] - 1.0f) / m00,
+			(projection[9] - 1.0f) / m11);
 		glUniform2f(ao_near_far, nearz, farz);
 		glUniform1f(ao_radius, radius);
 		glUniform1f(ao_radius_pixels, radius_pixels);
@@ -519,6 +521,12 @@ void GTAOResources::Apply(Framebuffer* source, Framebuffer* target, const render
 		if (ao_ao_inv_screen_size != -1)
 			glUniform2f(ao_ao_inv_screen_size, 1.0f / (float)ao_width, 1.0f / (float)ao_height);
 		glUniform2f(ao_screen_size, (float)ao_width, (float)ao_height);
+		if (ao_noise_origin != -1)
+		{
+			glUniform2f(ao_noise_origin,
+				(float)noise_origin_x * (float)ao_width / (float)source_width,
+				(float)noise_origin_y * (float)ao_height / (float)source_height);
+		}
 		glUniform1i(ao_directions, directions);
 		glUniform1i(ao_steps, steps);
 		if (ao_terrain_occlusion != -1)

@@ -666,6 +666,7 @@ void RenderCockpit()
 	Cockpit_post_post_snapshot.display_spread = display_spread;
 
 	//	draws lower z cockpit, and monitor glares after gauge renderering
+	rend_SetAOSuppression(1.0f);
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
@@ -676,6 +677,7 @@ void RenderCockpit()
 	rend_SetZBufferWriteMask(1);
 	rend_SetZBufferState(1);
 	DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.layered_mask, 0, 1);
+	rend_SetAOSuppression(0.0f);
 	rend_SetZBufferState(0);
 
 	if (display_adjust_active)

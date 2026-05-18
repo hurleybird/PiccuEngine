@@ -94,6 +94,7 @@ class GL4Renderer : public IRenderer
 	Framebuffer ao_scene_framebuffer;
 	Framebuffer ao_composite_framebuffer;
 	Framebuffer post_present_framebuffer;
+	Framebuffer post_composite_framebuffer;
 	Framebuffer motion_blur_framebuffer;
 	MotionVectorResources motion_vectors;
 	PostProtectionMaskResources post_protection_mask;
@@ -132,6 +133,14 @@ class GL4Renderer : public IRenderer
 	float last_farz = 10000.f;
 	bool captured_scene_projection_valid = false;
 	bool captured_scene_view_projection_valid = false;
+	bool deferred_bloom_composite_pending = false;
+	Framebuffer* deferred_bloom_framebuffer = nullptr;
+	GLuint deferred_bloom_protection_mask_texture = 0;
+	float deferred_bloom_uv_origin_x = 0.0f;
+	float deferred_bloom_uv_origin_y = 0.0f;
+	float deferred_bloom_uv_scale_x = 1.0f;
+	float deferred_bloom_uv_scale_y = 1.0f;
+	float deferred_display_gamma = 1.0f;
 	float current_view_projection[16] = {};
 	float current_inverse_view_projection[16] = {};
 	float previous_view_projection[16] = {};
@@ -391,6 +400,9 @@ private:
 	void UpdateWindow();
 	void RefreshViewSize();
 	void UpdatePresentRect();
+	bool BeginPostPresentFrameInternal(bool defer_bloom_composite);
+	void CompositeDeferredBloomOverPostPresent();
+	void GammaCorrectPostPresent();
 	int SupersamplingFactor() const;
 	int FramebufferWidth() const;
 	int FramebufferHeight() const;
@@ -610,6 +622,8 @@ public:
 	bool IsPostPresentFramePending() const override;
 	void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) override;
 	void EndPostPresentFrame() override;
+	bool BeginCockpitFrame() override;
+	void EndCockpitFrame() override;
 
 	// Draws a line using the states of the renderer
 	void DrawSpecialLine(g3Point* p0, g3Point* p1) override;

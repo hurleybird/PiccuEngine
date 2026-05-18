@@ -162,7 +162,7 @@ bool GL4Renderer::MotionVectorWritesEnabled() const
 
 bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 {
-	if (!PixelMotionVectorModeEnabled() || OpenGL_state.cur_zbuffer_state == 0)
+	if (!PixelMotionVectorModeEnabled() || post_present_pending_swap || OpenGL_state.cur_zbuffer_state == 0)
 		return false;
 
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
@@ -1517,6 +1517,7 @@ void GL4Renderer::BeginMotionObject(int object_handle)
 	const bool cockpit_draw = rend_Get3DDrawCallCategory() == RENDERER_DRAW_CALL_3D_COCKPIT;
 	cockpit_motion_object_active = false;
 	motion_object_active = object_handle >= 0 && framebuffer_ok &&
+		!post_present_pending_swap &&
 		(!motion_vectors_capture_locked || cockpit_draw) &&
 		OpenGL_preferred_state.motion_vector_mode != RENDERER_MOTION_VECTOR_OFF &&
 		motion_vectors.velocity_texture != 0;

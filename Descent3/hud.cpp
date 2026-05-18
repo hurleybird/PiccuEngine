@@ -1000,11 +1000,14 @@ void RenderHUDFrame(float zoom)
 	// [ISB] extra pass to render the cockpit so it always uses correct window
 	if (must_render_cockpit)
 	{
+		const bool cockpit_post_frame = rend_BeginCockpitFrame();
 		StartFrame(false);
 		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
 		RenderCockpit();
 		g3_EndFrame();
 		EndFrame();
+		if (cockpit_post_frame)
+			rend_EndCockpitFrame();
 	}
 
 	rend_SetZBufferState(1);

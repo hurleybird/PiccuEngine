@@ -1273,12 +1273,18 @@ void BloomResources::InitShaders()
 	composite_use_protection_mask = compositeshader.FindUniform("use_protection_mask");
 	composite_uv_origin = compositeshader.FindUniform("uv_origin");
 	composite_uv_scale = compositeshader.FindUniform("uv_scale");
+	composite_scene_uv_origin = compositeshader.FindUniform("scene_uv_origin");
+	composite_scene_uv_scale = compositeshader.FindUniform("scene_uv_scale");
 	if (composite_uv_origin != -1)
 		glUniform2f(composite_uv_origin, 0.0f, 0.0f);
 	if (composite_uv_scale != -1)
 		glUniform2f(composite_uv_scale, 1.0f, 1.0f);
+	if (composite_scene_uv_origin != -1)
+		glUniform2f(composite_scene_uv_origin, 0.0f, 0.0f);
+	if (composite_scene_uv_scale != -1)
+		glUniform2f(composite_scene_uv_scale, 1.0f, 1.0f);
 	if (composite_gamma == -1 || composite_intensity == -1 || composite_use_alpha_mask == -1 ||
-		composite_use_protection_mask == -1)
+		composite_use_protection_mask == -1 || composite_scene_uv_origin == -1 || composite_scene_uv_scale == -1)
 		Error("BloomResources::InitShaders: Failed to find composite uniforms!");
 
 	ShaderProgram::ClearBinding();

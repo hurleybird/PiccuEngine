@@ -290,6 +290,8 @@ struct BloomResources
 	GLint composite_use_protection_mask = -1;
 	GLint composite_uv_origin = -1;
 	GLint composite_uv_scale = -1;
+	GLint composite_scene_uv_origin = -1;
+	GLint composite_scene_uv_scale = -1;
 
 	void InitShaders();
 	void DestroyShaders();

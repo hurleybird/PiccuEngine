@@ -239,6 +239,8 @@ public:
 	virtual bool IsPostPresentFramePending() const { return false; }
 	virtual void StartPostPresentFrame(int x1, int y1, int x2, int y2, int clear_flags = RF_CLEAR_ZBUFFER) {}
 	virtual void EndPostPresentFrame() {}
+	virtual bool BeginCockpitFrame() { return false; }
+	virtual void EndCockpitFrame() {}
 
 	// Draws a line using the states of the renderer
 	virtual void DrawSpecialLine(g3Point* p0, g3Point* p1) = 0;

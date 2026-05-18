@@ -52,6 +52,7 @@
 #define COCKPIT_DISPLAY_CENTER_THRESHOLD 0.25f
 #define COCKPIT_DISPLAY_WIDTH_THRESHOLD 0.20f
 constexpr int COCKPIT_MOTION_OBJECT_HANDLE = 0x20000000;
+static constexpr bool COCKPIT_PIXEL_MOTION_ENABLED = false;
 struct tCockpitCfgInfo
 {
 	char modelname[PSFILENAME_LEN];
@@ -124,12 +125,18 @@ static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
 
 static void BeginCockpitMotionObject(vector* pos, matrix* orient)
 {
+	if (!COCKPIT_PIXEL_MOTION_ENABLED)
+		return;
+
 	PolymodelMotionBeginObject(COCKPIT_MOTION_OBJECT_HANDLE, pos, orient);
 	rend_BeginMotionObject(COCKPIT_MOTION_OBJECT_HANDLE);
 }
 
 static void EndCockpitMotionObject()
 {
+	if (!COCKPIT_PIXEL_MOTION_ENABLED)
+		return;
+
 	rend_EndMotionObject();
 	PolymodelMotionEndObject();
 }

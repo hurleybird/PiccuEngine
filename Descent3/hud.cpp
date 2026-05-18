@@ -1240,26 +1240,77 @@ static int HUDEnabledControlsStartY()
 
 static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
 {
+	struct tDrawCallColumn
+	{
+		const char* label;
+		uint32_t value;
+		int value_width;
+	};
+
+	auto draw_row = [](int y, const tDrawCallColumn* columns, int count)
+	{
+		const int gap_width = grtext_GetTextLineWidth("    ");
+		int left = 0, top = 0, right = Game_window_w, bottom = Game_window_h, tabspace = 0;
+		grtext_GetParameters(&left, &top, &right, &bottom, &tabspace);
+
+		char value_text[16];
+		int row_width = 0;
+		int label_width[3] = {};
+		int column_width[3] = {};
+		for (int i = 0; i < count; i++)
+		{
+			label_width[i] = grtext_GetTextLineWidth(columns[i].label);
+			snprintf(value_text, sizeof(value_text), "%u", columns[i].value);
+			int value_width = grtext_GetTextLineWidth(value_text);
+			column_width[i] = label_width[i] + columns[i].value_width;
+			if (value_width > columns[i].value_width)
+				column_width[i] += value_width - columns[i].value_width;
+			row_width += column_width[i];
+		}
+		row_width += gap_width * (count - 1);
+
+		int x = left + ((right - left) - row_width) / 2;
+		for (int i = 0; i < count; i++)
+		{
+			RenderHUDTextFlags(0, HUD_COLOR, HUD_ALPHA, 0, x, y, "%s", columns[i].label);
+			snprintf(value_text, sizeof(value_text), "%u", columns[i].value);
+			const int value_width = grtext_GetTextLineWidth(value_text);
+			const int value_x = x + label_width[i] + columns[i].value_width - value_width;
+			RenderHUDTextFlags(0, HUD_COLOR, HUD_ALPHA, 0, value_x, y, "%s", value_text);
+			x += column_width[i] + gap_width;
+		}
+	};
+
+	const int reserved_value_width = grtext_GetTextLineWidth("88888");
 	const int line_height = grtext_GetHeight("X") + 2;
 	int y = Game_window_y + (Game_window_h / 2) - (line_height * 4);
-	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-		"Draw calls:%5u", draw_stats.total);
+
+	tDrawCallColumn total[] = {
+		{ "Draw calls: ", draw_stats.total, reserved_value_width },
+	};
+	draw_row(y, total, 1);
 	y += line_height;
-	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-		"3D:%5u  2D:%5u  Font:%5u",
-		draw_stats.category[RENDERER_DRAW_CALL_3D],
-		draw_stats.category[RENDERER_DRAW_CALL_2D],
-		draw_stats.category[RENDERER_DRAW_CALL_FONT]);
+
+	tDrawCallColumn geometry[] = {
+		{ "3D: ", draw_stats.category[RENDERER_DRAW_CALL_3D], reserved_value_width },
+		{ "2D: ", draw_stats.category[RENDERER_DRAW_CALL_2D], reserved_value_width },
+		{ "Font: ", draw_stats.category[RENDERER_DRAW_CALL_FONT], reserved_value_width },
+	};
+	draw_row(y, geometry, 3);
 	y += line_height;
-	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-		"Prim:%5u  Motion:%5u",
-		draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE],
-		draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR]);
+
+	tDrawCallColumn primitives[] = {
+		{ "Prim: ", draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE], reserved_value_width },
+		{ "Motion: ", draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR], reserved_value_width },
+	};
+	draw_row(y, primitives, 2);
 	y += line_height;
-	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-		"Post:%5u  Mesh:%5u",
-		draw_stats.category[RENDERER_DRAW_CALL_POSTPROCESS],
-		draw_stats.category[RENDERER_DRAW_CALL_MESH]);
+
+	tDrawCallColumn post[] = {
+		{ "Post: ", draw_stats.category[RENDERER_DRAW_CALL_POSTPROCESS], reserved_value_width },
+		{ "Mesh: ", draw_stats.category[RENDERER_DRAW_CALL_MESH], reserved_value_width },
+	};
+	draw_row(y, post, 2);
 }
 
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()

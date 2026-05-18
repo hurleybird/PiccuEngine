@@ -933,8 +933,6 @@ int GL4Renderer::SetPreferredState(renderer_preferred_state* pref_state)
 
 void GL4Renderer::StartFrame(int x1, int y1, int x2, int y2, int clear_flags)
 {
-	FlushFontBatch();
-
 	if (msaa_deferred_apply_pending && framebuffer_ok)
 	{
 		PERF_MARKER_SCOPE("Renderer.StartFrame.DeferredMsaaUpdate");
@@ -1483,7 +1481,6 @@ void GL4Renderer::EndPostPresentFrame()
 
 void GL4Renderer::EndFrame(void)
 {
-	FlushFontBatch();
 }
 
 void GL4Renderer::CaptureBloomSource()
@@ -1607,8 +1604,6 @@ bool GL4Renderer::CheckExtension(char* extName)
 
 void GL4Renderer::SetGammaValue(float val)
 {
-	FlushFontBatch();
-
 	blitshader.Use();
 
 	glUniform1f(blitshader_gamma, 1.f / val);
@@ -1622,8 +1617,6 @@ void GL4Renderer::SetFlatColor(ddgr_color color)
 // Sets the fog state to TRUE or FALSE
 void GL4Renderer::SetFogState(sbyte state)
 {
-	FlushFontBatch();
-
 	if (state)
 		post_protection_mask_dirty = true;
 
@@ -1636,8 +1629,6 @@ void GL4Renderer::SetFogState(sbyte state)
 // Sets the near and far plane of fog
 void GL4Renderer::SetFogBorders(float nearz, float farz)
 {
-	FlushFontBatch();
-
 	// Sets the near and far plane of fog
 	float fog_start = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / nearz)));
 	float fog_end = std::max(0.f, std::min(1.0f, 1.0f - (1.0f / farz)));
@@ -1652,8 +1643,6 @@ void GL4Renderer::SetFogBorders(float nearz, float farz)
 // Sets the color of fog
 void GL4Renderer::SetFogColor(ddgr_color color)
 {
-	FlushFontBatch();
-
 	float fc[4];
 	fc[0] = GR_COLOR_RED(color);
 	fc[1] = GR_COLOR_GREEN(color);
@@ -1674,7 +1663,6 @@ void GL4Renderer::SetLighting(light_state state)
 
 	if (state == OpenGL_state.cur_light_state)
 		return;	// No redundant state setting
-	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -1708,8 +1696,6 @@ void GL4Renderer::SetLighting(light_state state)
 
 void GL4Renderer::SetPerPixelLightingDirection(const vector *lightdir)
 {
-	FlushFontBatch();
-
 	if (lightdir)
 	{
 		per_pixel_light_direction = *lightdir;
@@ -1736,8 +1722,6 @@ static void UpdateCurrentDynamicLightingUniforms(int count, const vector &face_n
 void GL4Renderer::SetPerPixelDynamicLighting(const vector *face_normal, int count,
 	const renderer_per_pixel_light *lights)
 {
-	FlushFontBatch();
-
 	if (!OpenGL_preferred_state.per_pixel_lighting || count <= 0 || lights == nullptr || face_normal == nullptr)
 	{
 		if (per_pixel_dynamic_light_count != 0)
@@ -1781,7 +1765,6 @@ void GL4Renderer::SetColorModel(color_model state)
 {
 	if (state == OpenGL_state.cur_color_model)
 		return;
-	FlushFontBatch();
 
 	switch (state)
 	{
@@ -1801,7 +1784,6 @@ void GL4Renderer::SetTextureType(texture_type state)
 {
 	if (state == OpenGL_state.cur_texture_type)
 		return;	// No redundant state setting
-	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -1834,7 +1816,6 @@ void GL4Renderer::SetFiltering(sbyte state)
 {
 	if (state == OpenGL_state.cur_bilinear_state)
 		return;
-	FlushFontBatch();
 
 	OpenGL_state.cur_bilinear_state = state;
 }
@@ -1844,7 +1825,6 @@ void GL4Renderer::SetZBufferState(sbyte state)
 {
 	if (state == OpenGL_state.cur_zbuffer_state)
 		return;	// No redundant state setting
-	FlushFontBatch();
 
 	OpenGL_sets_this_frame[5]++;
 	OpenGL_state.cur_zbuffer_state = state;
@@ -1867,8 +1847,6 @@ void GL4Renderer::SetZBufferState(sbyte state)
 // Sets the near and far planes for z buffer
 void GL4Renderer::SetZValues(float nearz, float farz)
 {
-	FlushFontBatch();
-
 	OpenGL_state.cur_near_z = nearz;
 	OpenGL_state.cur_far_z = farz;
 	//	mprintf ((0,"OPENGL:Setting depth range to %f - %f\n",nearz,farz));
@@ -1880,7 +1858,6 @@ void GL4Renderer::SetOverlayMap(int handle)
 {
 	if (handle == Overlay_map)
 		return;
-	FlushFontBatch();
 
 	Overlay_map = handle;
 }
@@ -1889,7 +1866,6 @@ void GL4Renderer::SetOverlayType(ubyte type)
 {
 	if (type == Overlay_type)
 		return;
-	FlushFontBatch();
 
 	Overlay_type = type;
 }
@@ -1976,7 +1952,6 @@ void GL4Renderer::SetAlphaType(sbyte atype)
 {
 	if (atype == OpenGL_state.cur_alpha_type)
 		return;		// don't set it redundantly
-	FlushFontBatch();
 	if (UseMultitexture && Last_texel_unit_set != 0)
 	{
 		glActiveTexture(GL_TEXTURE0 + 0);
@@ -2068,7 +2043,6 @@ void GL4Renderer::SetAOSuppression(float value)
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
 	if (clamped_value == ao_suppression_draw_value)
 		return;
-	FlushFontBatch();
 	if (clamped_value != ao_suppression_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = clamped_value;
@@ -2083,7 +2057,6 @@ void GL4Renderer::SetBloomSuppression(float value)
 	float clamped_value = std::max(0.0f, std::min(value, 1.0f));
 	if (clamped_value == bloom_suppression_draw_value)
 		return;
-	FlushFontBatch();
 	if (clamped_value != bloom_suppression_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	bloom_suppression_draw_value = clamped_value;
@@ -2114,7 +2087,6 @@ void GL4Renderer::SetAOClass(int value)
 	float weight_value = GL4AOClassWeight(OpenGL_preferred_state, clamped_value);
 	if (clamped_value == ao_class_draw_value && weight_value == ao_weight_draw_value)
 		return;
-	FlushFontBatch();
 	if (clamped_value != ao_class_draw_value || weight_value != ao_weight_draw_value)
 		legacy_draw_uniforms_dirty = true;
 	ao_class_draw_value = clamped_value;
@@ -2178,15 +2150,11 @@ float GL4Renderer::GetAlphaFactor(void)
 // Sets the texture wrapping type
 void GL4Renderer::SetWrapType(wrap_type val)
 {
-	FlushFontBatch();
-
 	OpenGL_state.cur_wrap_type = val;
 }
 
 void GL4Renderer::SetZBias(float z_bias)
 {
-	FlushFontBatch();
-
 	if (Z_bias != z_bias)
 	{
 		Z_bias = z_bias;
@@ -2196,8 +2164,6 @@ void GL4Renderer::SetZBias(float z_bias)
 // Enables/disables writes the depth buffer
 void GL4Renderer::SetZBufferWriteMask(int state)
 {
-	FlushFontBatch();
-
 	OpenGL_sets_this_frame[5]++;
 	if (state)
 	{

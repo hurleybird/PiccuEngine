@@ -545,6 +545,7 @@ void ui_UpdateWindows()
 		if (wndnode->next == NULL) {
 		}
 		wndnode->wnd->Render();
+		rend_FlushTextLayer();
 		wndnode = wndnode->next;
 	}
 }

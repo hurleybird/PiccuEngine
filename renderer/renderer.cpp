@@ -504,6 +504,14 @@ void rend_DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float
 	renderer_inst->DrawFontCharacter(bm_handle, x1, y1, x2, y2, u, v, w, h);
 }
 
+void rend_FlushTextLayer()
+{
+	if (!Renderer_initted)
+		return;
+
+	renderer_inst->FlushTextLayer();
+}
+
 // Draws a line
 void rend_DrawLine(int x1, int y1, int x2, int y2)
 {

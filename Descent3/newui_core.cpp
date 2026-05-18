@@ -4682,6 +4682,7 @@ int newuiTiledWindow::DoUI()
 			ui_StartDraw(m_X, m_Y, m_X + m_W, m_Y + m_H);
 			(*m_draw_cb)(this, m_data);
 			ui_EndDraw();
+			rend_FlushTextLayer();
 			ui_DoCursor();
 		}
 		DebugBlockPrint("UZ");

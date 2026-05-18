@@ -44,6 +44,7 @@
 #include "sounds.h"
 #include "hlsoundlib.h"
 #include "args.h"
+#include "renderer.h"
 
 #define HUD_MESSAGE_NORMAL		0
 #define HUD_MESSAGE_BLINKING	1
@@ -105,6 +106,23 @@ void CorrectHudMessage(char *str);
 
 ///////////////////////////////////////////////////////////////////////////////
 //	Functions
+
+bool AreHUDMessageConsolesOpen()
+{
+	return Game_msg_con_vis || HUD_msg_con_vis;
+}
+
+void RenderHUDMessageConsoles()
+{
+	Game_msg_con.DoInput();
+	rend_FlushTextLayer();
+	Game_msg_con.Draw();
+	rend_FlushTextLayer();
+
+	HUD_msg_con.DoInput();
+	HUD_msg_con.Draw();
+	rend_FlushTextLayer();
+}
 
 
 //	prints a string onto the debug consle

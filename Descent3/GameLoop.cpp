@@ -2312,7 +2312,8 @@ void GameDrawHud()
 static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
 {
 	const bool draw_cockpit = !HUD_disabled && CockpitHasPostPostElements();
-	if (!force_backbuffer_frame && !draw_cockpit)
+	const bool draw_message_consoles = !HUD_disabled && AreHUDMessageConsolesOpen();
+	if (!force_backbuffer_frame && !draw_cockpit && !draw_message_consoles)
 		return;
 
 	PERF_MARKER_SCOPE("GameDrawPostPresentFrame");
@@ -2322,6 +2323,12 @@ static void GameDrawPostPresentFrame(bool force_backbuffer_frame)
 		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, HUD_RENDER_ZOOM);
 		RenderCockpitPostPost();
 		g3_EndFrame();
+	}
+	if (draw_message_consoles)
+	{
+		if (draw_cockpit)
+			rend_StartPostPresentFrame(0, 0, Max_window_w, Max_window_h, RF_CLEAR_ZBUFFER);
+		RenderHUDMessageConsoles();
 	}
 	rend_EndFrame();
 }
@@ -2456,6 +2463,7 @@ void GameRenderFrame(void)
 			grtext_Flush();
 			EndFrame();
 		}
+		rend_FlushTextLayer();
 		rend_PerfGpuSceneMark(RENDERER_GPU_SCENE_AFTER_DEBUG);
 	}
 

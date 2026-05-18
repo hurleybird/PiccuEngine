@@ -455,6 +455,7 @@ ddgr_color rend_GetPixel (int x,int y);
 
 // Sets up a font character to draw.  We draw our fonts as pieces of textures
 void rend_DrawFontCharacter (int bm_handle,int x1,int y1,int x2,int y2,float u,float v,float w,float h);
+void rend_FlushTextLayer();
 
 // Draws a line
 void rend_DrawLine (int x1,int y1,int x2,int y2);

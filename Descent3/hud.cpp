@@ -1033,10 +1033,6 @@ void RenderPreHUDFrame()
 }
 
 
-
-extern MsgListConsole Game_msg_con;
-extern MsgListConsole HUD_msg_con;
-
 // render auxillary hud
 void RenderAuxHUDFrame()
 {
@@ -1074,11 +1070,6 @@ void RenderAuxHUDFrame()
 		Game_window_y = cur_game_win_y;
 	}
 
-	// render game and hud message consoles.
-	Game_msg_con.DoInput();
-	Game_msg_con.Draw();
-	HUD_msg_con.DoInput();
-	HUD_msg_con.Draw();
 }
 
 extern const char* cfg_binding_text(ct_type ctype, ubyte ctrl, ubyte binding);
@@ -1247,6 +1238,30 @@ static int HUDEnabledControlsStartY()
 	return y;
 }
 
+static void HUDRenderDrawCallStats(const renderer_draw_call_stats& draw_stats)
+{
+	const int line_height = grtext_GetHeight("X") + 2;
+	int y = Game_window_y + (Game_window_h / 2) - (line_height * 4);
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Draw calls:%5u", draw_stats.total);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"3D:%5u  2D:%5u  Font:%5u",
+		draw_stats.category[RENDERER_DRAW_CALL_3D],
+		draw_stats.category[RENDERER_DRAW_CALL_2D],
+		draw_stats.category[RENDERER_DRAW_CALL_FONT]);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Prim:%5u  Motion:%5u",
+		draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE],
+		draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR]);
+	y += line_height;
+	RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
+		"Post:%5u  Mesh:%5u",
+		draw_stats.category[RENDERER_DRAW_CALL_POSTPROCESS],
+		draw_stats.category[RENDERER_DRAW_CALL_MESH]);
+}
+
 #define HUD_KEYS_NEXT_LINE	hudconty += HUDEnabledControlsLineAdvance()
 
 //	iterate through entire hud item list to draw.
@@ -1308,27 +1323,7 @@ void RenderHUDItems(tStatMask stat_mask)
 	{
 		renderer_draw_call_stats draw_stats = {};
 		rend_GetDrawCallStats(&draw_stats);
-		const int line_height = grtext_GetHeight("X") + 2;
-		int y = Game_window_y + (Game_window_h / 2) - (line_height * 4);
-
-		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-			"Draw calls: %u", draw_stats.total);
-		y += line_height;
-		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-			"3D: %u  2D: %u  Font: %u",
-			draw_stats.category[RENDERER_DRAW_CALL_3D],
-			draw_stats.category[RENDERER_DRAW_CALL_2D],
-			draw_stats.category[RENDERER_DRAW_CALL_FONT]);
-		y += line_height;
-		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-			"Prim: %u  Motion: %u",
-			draw_stats.category[RENDERER_DRAW_CALL_PRIMITIVE],
-			draw_stats.category[RENDERER_DRAW_CALL_MOTION_VECTOR]);
-		y += line_height;
-		RenderHUDTextFlags(HUDTEXT_CENTERED, HUD_COLOR, HUD_ALPHA, 0, 0, y,
-			"Post: %u  Mesh: %u",
-			draw_stats.category[RENDERER_DRAW_CALL_POSTPROCESS],
-			draw_stats.category[RENDERER_DRAW_CALL_MESH]);
+		HUDRenderDrawCallStats(draw_stats);
 	}
 
 	// show music spew

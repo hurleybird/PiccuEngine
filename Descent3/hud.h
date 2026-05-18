@@ -345,6 +345,8 @@ void RenderPreHUDFrame();
 
 // render auxillary hud
 void RenderAuxHUDFrame();
+bool AreHUDMessageConsolesOpen();
+void RenderHUDMessageConsoles();
 
 // savegame system hooks
 void SGSHudState(CFILE *fp);

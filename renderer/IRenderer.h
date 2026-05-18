@@ -222,6 +222,7 @@ public:
 
 	// Sets up a font character to draw.  We draw our fonts as pieces of textures
 	virtual void DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h) = 0;
+	virtual void FlushTextLayer() {}
 
 	// Draws a line
 	virtual void DrawLine(int x1, int y1, int x2, int y2) = 0;

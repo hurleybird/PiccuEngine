@@ -161,7 +161,7 @@ class GL4Renderer : public IRenderer
 
 	//DRAW
 	gl_vertex GL_vertices[100];
-	std::vector<gl_vertex> font_batch_vertices;
+	std::vector<gl_vertex> font_batch_vertices[2];
 	GLuint font_texture_array = 0;
 	int font_texture_array_width = 0;
 	int font_texture_array_height = 0;
@@ -306,6 +306,11 @@ private:
 	void BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xscalar, float yscalar,
 		ubyte fr, ubyte fg, ubyte fb);
 	void FlushFontBatch();
+	void FlushFontBatchVertices(int batch_index);
+	bool FontBatchHasVertices() const;
+	void ClearFontBatchVertices();
+	void SetFontBatchFullscreenDrawState(GLint old_viewport[4]);
+	void RestoreFontBatchDrawState(const GLint old_viewport[4]);
 	int GetFontTextureLayer(int bm_handle);
 	void UploadFontTextureLayer(int layer, int bm_handle);
 	void DestroyFontBatchResources();
@@ -551,6 +556,7 @@ public:
 
 	// Sets up a font character to draw.  We draw our fonts as pieces of textures
 	void DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h) override;
+	void FlushTextLayer() override;
 
 	// Draws a line
 	void DrawLine(int x1, int y1, int x2, int y2) override;

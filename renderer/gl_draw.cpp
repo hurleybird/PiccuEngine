@@ -18,6 +18,7 @@
 */
 #include "gl_local.h"
 
+#include <cstring>
 #include <vector>
 
 //The number of vertex attributes the legacy code used.
@@ -43,6 +44,31 @@ static void GL4UseSceneDrawBuffersWithoutAOClass()
 	};
 	glDrawBuffers(4, draw_buffers);
 	GL_ConfigurePostMaskBlend();
+}
+
+static void GL4BuildOrtho(float* mat, float left, float right, float bottom, float top, float znear, float zfar)
+{
+	memset(mat, 0, sizeof(float[16]));
+	mat[0] = 2 / (right - left);
+	mat[5] = 2 / (top - bottom);
+	mat[10] = -2 / (zfar - znear);
+	mat[12] = -((right + left) / (right - left));
+	mat[13] = -((top + bottom) / (top - bottom));
+	mat[14] = -((zfar + znear) / (zfar - znear));
+	mat[15] = 1;
+}
+
+static float GL4FontBatchIdentity[16] =
+{
+	1, 0, 0, 0,
+	0, 1, 0, 0,
+	0, 0, 1, 0,
+	0, 0, 0, 1
+};
+
+static int GL4FontBatchIndexForAlpha(int alpha_type)
+{
+	return alpha_type == AT_SATURATE_TEXTURE ? 1 : 0;
 }
 
 void GL4Renderer::UseDrawVAO()
@@ -384,10 +410,60 @@ void GL4Renderer::BuildDrawVertex(gl_vertex& vert, const g3Point* pnt, float xsc
 	vert.vert.z = -z;
 }
 
-void GL4Renderer::FlushFontBatch()
+void GL4Renderer::SetFontBatchFullscreenDrawState(GLint old_viewport[4])
 {
-	if (font_batch_vertices.empty())
+	glGetIntegerv(GL_VIEWPORT, old_viewport);
+
+	float projection[16];
+	GL4BuildOrtho(projection, 0, (float)OpenGL_state.screen_width, (float)OpenGL_state.screen_height, 0, 0, 1);
+	UpdateLegacyBlock(projection, GL4FontBatchIdentity);
+
+	if (GL4DrawTargetIsFramebuffer(post_present_framebuffer.Handle()) || !framebuffer_ok)
+	{
+		glViewport(0, 0, OpenGL_state.screen_width, OpenGL_state.screen_height);
+	}
+	else
+	{
+		glViewport(ScaledX(0), FramebufferHeight() - ScaledY(OpenGL_state.screen_height),
+			ScaledW(OpenGL_state.screen_width), ScaledH(OpenGL_state.screen_height));
+	}
+}
+
+void GL4Renderer::RestoreFontBatchDrawState(const GLint old_viewport[4])
+{
+	int clip_width = OpenGL_state.clip_x2 - OpenGL_state.clip_x1;
+	int clip_height = OpenGL_state.clip_y2 - OpenGL_state.clip_y1;
+	if (clip_width <= 0)
+		clip_width = OpenGL_state.screen_width;
+	if (clip_height <= 0)
+		clip_height = OpenGL_state.screen_height;
+
+	float projection[16];
+	GL4BuildOrtho(projection, 0, (float)clip_width, (float)clip_height, 0, 0, 1);
+	UpdateLegacyBlock(projection, GL4FontBatchIdentity);
+	glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+}
+
+bool GL4Renderer::FontBatchHasVertices() const
+{
+	return !font_batch_vertices[0].empty() || !font_batch_vertices[1].empty();
+}
+
+void GL4Renderer::ClearFontBatchVertices()
+{
+	font_batch_vertices[0].clear();
+	font_batch_vertices[1].clear();
+}
+
+void GL4Renderer::FlushFontBatchVertices(int batch_index)
+{
+	if (batch_index < 0 || batch_index >= 2 || font_batch_vertices[batch_index].empty())
 		return;
+
+	if (batch_index == 1)
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	else
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
 	float old_ao_suppression = ao_suppression_draw_value;
 	float old_bloom_suppression = bloom_suppression_draw_value;
@@ -408,24 +484,60 @@ void GL4Renderer::FlushFontBatch()
 		glBindTexture(GL_TEXTURE_2D_ARRAY, font_texture_array);
 	}
 
-	const int offset = CopyVertices(font_batch_vertices.data(), (int)font_batch_vertices.size());
+	const int offset = CopyVertices(font_batch_vertices[batch_index].data(), (int)font_batch_vertices[batch_index].size());
 	const bool suppress_ao_class_write = framebuffer_ok &&
 		OpenGL_state.cur_zbuffer_state == 0 &&
 		GL4DrawTargetIsFramebuffer(framebuffers[framebuffer_current_draw].Handle());
 	if (suppress_ao_class_write)
 		GL4UseSceneDrawBuffersWithoutAOClass();
 	rend_RecordDrawCall(RENDERER_DRAW_CALL_FONT);
-	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)font_batch_vertices.size());
+	glDrawArrays(GL_TRIANGLES, offset, (GLsizei)font_batch_vertices[batch_index].size());
 	if (suppress_ao_class_write)
 		post_protection_mask.UseSceneDrawBuffers(framebuffers[framebuffer_current_draw].Handle());
 
-	font_batch_vertices.clear();
+	font_batch_vertices[batch_index].clear();
 
 	if (ao_suppression_draw_value != old_ao_suppression || bloom_suppression_draw_value != old_bloom_suppression)
 		legacy_draw_uniforms_dirty = true;
 	ao_suppression_draw_value = old_ao_suppression;
 	bloom_suppression_draw_value = old_bloom_suppression;
 	ShaderProgram::ClearBinding();
+}
+
+void GL4Renderer::FlushFontBatch()
+{
+	if (!FontBatchHasVertices())
+		return;
+
+	GLint old_viewport[4] = {};
+	GLboolean depth_test_was_enabled = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean blend_was_enabled = glIsEnabled(GL_BLEND);
+	GLint blend_src_rgb = GL_ONE;
+	GLint blend_dst_rgb = GL_ZERO;
+	GLint blend_src_alpha = GL_ONE;
+	GLint blend_dst_alpha = GL_ZERO;
+	glGetIntegerv(GL_BLEND_SRC_RGB, &blend_src_rgb);
+	glGetIntegerv(GL_BLEND_DST_RGB, &blend_dst_rgb);
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src_alpha);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst_alpha);
+
+	SetFontBatchFullscreenDrawState(old_viewport);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+
+	FlushFontBatchVertices(0);
+	FlushFontBatchVertices(1);
+
+	if (depth_test_was_enabled)
+		glEnable(GL_DEPTH_TEST);
+	else
+		glDisable(GL_DEPTH_TEST);
+	if (blend_was_enabled)
+		glEnable(GL_BLEND);
+	else
+		glDisable(GL_BLEND);
+	glBlendFuncSeparate(blend_src_rgb, blend_dst_rgb, blend_src_alpha, blend_dst_alpha);
+	RestoreFontBatchDrawState(old_viewport);
 
 	CHECK_ERROR(10);
 }
@@ -476,7 +588,7 @@ int GL4Renderer::GetFontTextureLayer(int bm_handle)
 
 	if (font_texture_array != 0 &&
 		(font_texture_array_width != w || font_texture_array_height != h) &&
-		!font_batch_vertices.empty())
+		FontBatchHasVertices())
 	{
 		FlushFontBatch();
 	}
@@ -529,7 +641,7 @@ int GL4Renderer::GetFontTextureLayer(int bm_handle)
 
 void GL4Renderer::DestroyFontBatchResources()
 {
-	font_batch_vertices.clear();
+	ClearFontBatchVertices();
 	font_texture_array_handles.clear();
 	if (font_texture_array != 0)
 	{
@@ -732,8 +844,6 @@ void GL4Renderer::SelectDrawShader()
 // Uses bitmap "handle" as a texture
 void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 {
-	FlushFontBatch();
-
 	g3Point* pnt;
 	int i;
 	ubyte fr, fg, fb;
@@ -891,8 +1001,6 @@ void GL4Renderer::DrawPolygon3D(int handle, g3Point** p, int nv, int map_type)
 
 void GL4Renderer::DrawPolygon3DBatch(int handle, const renderer_poly_batch_item *items, int count, int map_type)
 {
-	FlushFontBatch();
-
 	if (!items || count <= 0)
 		return;
 
@@ -1195,8 +1303,6 @@ void GL4Renderer::DrawScaledBitmapWithZ(int x1, int y1, int x2, int y2,
 // Fills a rectangle on the display
 void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 {
-	FlushFontBatch();
-
 	int r = GR_COLOR_RED(color);
 	int g = GR_COLOR_GREEN(color);
 	int b = GR_COLOR_BLUE(color);
@@ -1222,8 +1328,6 @@ void GL4Renderer::FillRect(ddgr_color color, int x1, int y1, int x2, int y2)
 // Sets a pixel on the display
 void GL4Renderer::SetPixel(ddgr_color color, int x, int y)
 {
-	FlushFontBatch();
-
 	ubyte r = (color >> 16 & 0xFF);
 	ubyte g = (color >> 8 & 0xFF);
 	ubyte b = (color & 0xFF);
@@ -1267,10 +1371,12 @@ void GL4Renderer::DrawCircle(int x, int y, int rad)
 // Sets up a font character to draw.  We draw our fonts as pieces of textures
 void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y2, float u, float v, float w, float h)
 {
+	const int batch_index = GL4FontBatchIndexForAlpha(OpenGL_state.cur_alpha_type);
+
 	const int texture_layer = GetFontTextureLayer(bm_handle);
 	if (texture_layer < 0)
 		return;
-	if (font_batch_vertices.size() + 6 > 60000)
+	if (font_batch_vertices[batch_index].size() + 6 > 60000)
 		FlushFontBatch();
 
 	gl_vertex quad[4] = {};
@@ -1279,6 +1385,8 @@ void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 	const ubyte fb = GR_COLOR_BLUE(OpenGL_state.cur_color);
 	const float alpha = Alpha_multiplier * OpenGL_Alpha_factor;
 	const float z = -std::max(0.f, std::min(1.0f, 1.0f - (1.0f / (1.0f + Z_bias))));
+	const float offset_x = (float)OpenGL_state.clip_x1;
+	const float offset_y = (float)OpenGL_state.clip_y1;
 
 	for (int i = 0; i < 4; i++)
 	{
@@ -1291,36 +1399,39 @@ void GL4Renderer::DrawFontCharacter(int bm_handle, int x1, int y1, int x2, int y
 		quad[i].vert.z = z;
 	}
 
-	quad[0].vert.x = (float)x1;
-	quad[0].vert.y = (float)y1;
+	quad[0].vert.x = offset_x + (float)x1;
+	quad[0].vert.y = offset_y + (float)y1;
 	quad[0].tex_coord.s = u;
 	quad[0].tex_coord.t = v;
-	quad[1].vert.x = (float)x2;
-	quad[1].vert.y = (float)y1;
+	quad[1].vert.x = offset_x + (float)x2;
+	quad[1].vert.y = offset_y + (float)y1;
 	quad[1].tex_coord.s = u + w;
 	quad[1].tex_coord.t = v;
-	quad[2].vert.x = (float)x2;
-	quad[2].vert.y = (float)y2;
+	quad[2].vert.x = offset_x + (float)x2;
+	quad[2].vert.y = offset_y + (float)y2;
 	quad[2].tex_coord.s = u + w;
 	quad[2].tex_coord.t = v + h;
-	quad[3].vert.x = (float)x1;
-	quad[3].vert.y = (float)y2;
+	quad[3].vert.x = offset_x + (float)x1;
+	quad[3].vert.y = offset_y + (float)y2;
 	quad[3].tex_coord.s = u;
 	quad[3].tex_coord.t = v + h;
 
-	font_batch_vertices.push_back(quad[0]);
-	font_batch_vertices.push_back(quad[1]);
-	font_batch_vertices.push_back(quad[2]);
-	font_batch_vertices.push_back(quad[0]);
-	font_batch_vertices.push_back(quad[2]);
-	font_batch_vertices.push_back(quad[3]);
+	font_batch_vertices[batch_index].push_back(quad[0]);
+	font_batch_vertices[batch_index].push_back(quad[1]);
+	font_batch_vertices[batch_index].push_back(quad[2]);
+	font_batch_vertices[batch_index].push_back(quad[0]);
+	font_batch_vertices[batch_index].push_back(quad[2]);
+	font_batch_vertices[batch_index].push_back(quad[3]);
+}
+
+void GL4Renderer::FlushTextLayer()
+{
+	FlushFontBatch();
 }
 
 // Draws a line
 void GL4Renderer::DrawLine(int x1, int y1, int x2, int y2)
 {
-	FlushFontBatch();
-
 	sbyte atype;
 	light_state ltype;
 	texture_type ttype;
@@ -1391,8 +1502,6 @@ void GL4Renderer::SetCharacterParameters(ddgr_color color1, ddgr_color color2, d
 // Turns on/off multitexture blending
 void GL4Renderer::SetMultitextureBlendMode(bool state)
 {
-	FlushFontBatch();
-
 	if (OpenGL_multitexture_state == state)
 		return;
 	OpenGL_multitexture_state = state;
@@ -1409,8 +1518,6 @@ void GL4Renderer::SetMultitextureBlendMode(bool state)
 // Draws a line using the states of the renderer
 void GL4Renderer::DrawSpecialLine(g3Point* p0, g3Point* p1)
 {
-	FlushFontBatch();
-
 	ubyte fr, fg, fb, alpha;
 	int i;
 

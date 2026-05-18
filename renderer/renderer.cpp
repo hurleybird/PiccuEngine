@@ -218,6 +218,11 @@ renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_
 	return old_category;
 }
 
+renderer_draw_call_3d_category rend_Get3DDrawCallCategory()
+{
+	return Renderer_current_3d_draw_call_category;
+}
+
 void rend_SetMotionVectorDebugSample(const renderer_motion_vector_debug_sample *sample)
 {
 	if (sample)

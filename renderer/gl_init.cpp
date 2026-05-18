@@ -752,6 +752,8 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	motionblurshader.Use();
 	motionblur_color_source = motionblurshader.FindUniform("color_source");
 	motionblur_velocity_source = motionblurshader.FindUniform("velocity_source");
+	motionblur_protection_mask = motionblurshader.FindUniform("protection_mask");
+	motionblur_use_protection_mask = motionblurshader.FindUniform("use_protection_mask");
 	motionblur_velocity_uv_origin = motionblurshader.FindUniform("velocity_uv_origin");
 	motionblur_velocity_uv_scale = motionblurshader.FindUniform("velocity_uv_scale");
 	motionblur_strength = motionblurshader.FindUniform("strength");
@@ -759,7 +761,10 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 		glUniform1i(motionblur_color_source, 0);
 	if (motionblur_velocity_source != -1)
 		glUniform1i(motionblur_velocity_source, 1);
+	if (motionblur_protection_mask != -1)
+		glUniform1i(motionblur_protection_mask, 2);
 	if (motionblur_color_source == -1 || motionblur_velocity_source == -1 ||
+		motionblur_protection_mask == -1 || motionblur_use_protection_mask == -1 ||
 		motionblur_velocity_uv_origin == -1 || motionblur_velocity_uv_scale == -1 ||
 		motionblur_strength == -1)
 		Error("GLRenderer::Init: Failed to find pixel motion blur uniforms!");

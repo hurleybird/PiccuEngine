@@ -404,6 +404,7 @@ void rend_GetStatistics(tRendererStats *stats);
 void rend_RecordDrawCall(renderer_draw_call_category category);
 void rend_GetDrawCallStats(renderer_draw_call_stats *stats);
 renderer_draw_call_3d_category rend_Set3DDrawCallCategory(renderer_draw_call_3d_category category);
+renderer_draw_call_3d_category rend_Get3DDrawCallCategory();
 void rend_SetMotionVectorDebugSample(const renderer_motion_vector_debug_sample *sample);
 void rend_GetMotionVectorDebugSample(renderer_motion_vector_debug_sample *sample);
 

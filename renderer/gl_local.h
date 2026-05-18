@@ -164,6 +164,8 @@ class GL4Renderer : public IRenderer
 	GLint motionvectordebug_screen_size = -1;
 	GLint motionblur_color_source = -1;
 	GLint motionblur_velocity_source = -1;
+	GLint motionblur_protection_mask = -1;
+	GLint motionblur_use_protection_mask = -1;
 	GLint motionblur_velocity_uv_origin = -1;
 	GLint motionblur_velocity_uv_scale = -1;
 	GLint motionblur_strength = -1;
@@ -237,6 +239,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_motion_vector_previous_view_projection_uniforms[8] = {};
 	GLint drawshader_motion_vector_screen_size_uniforms[8] = {};
 	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
+	GLint drawshader_motion_vector_payload_type_uniforms[8] = {};
 	int lastdrawshader = -1;
 	bool legacy_draw_uniforms_dirty = true;
 	float ao_suppression_draw_value = 0.0f;
@@ -266,6 +269,9 @@ class GL4Renderer : public IRenderer
 	bool motion_vectors_dirty = false;
 	bool motion_vectors_cleared_this_frame = false;
 	bool motion_vectors_capture_locked = false;
+	bool cockpit_motion_object_active = false;
+	float cockpit_previous_view_projection[16] = {};
+	bool have_cockpit_previous_view_projection = false;
 
 	//IMAGE
 	ubyte opengl_Framebuffer_ready = 0;
@@ -361,6 +367,8 @@ private:
 	bool PixelMotionVectorModeEnabled() const;
 	bool MotionVectorWritesEnabled() const;
 	bool CurrentDrawWritesPixelMotionVectors() const;
+	bool CurrentDrawIsLateCockpitPixelMotionVectorDraw() const;
+	bool CurrentDrawUsesPixelMotionTarget() const;
 	void ApplyPixelMotionBlur(int supersampling_factor);
 	void DrawMotionVectorDebugPreview(int supersampling_factor);
 	void UseSceneDrawBuffers();

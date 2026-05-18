@@ -299,6 +299,9 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 		GLint motion_vector_has_previous_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_has_previous");
 		if (motion_vector_has_previous_uniform != -1)
 			glUniform1i(motion_vector_has_previous_uniform, have_previous_view_projection ? 1 : 0);
+		GLint motion_vector_payload_type_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_payload_type");
+		if (motion_vector_payload_type_uniform != -1)
+			glUniform1i(motion_vector_payload_type_uniform, 0);
 	}
 }
 

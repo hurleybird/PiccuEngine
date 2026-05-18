@@ -51,6 +51,7 @@
 #define COCKPIT_SHIFT_DELTA 0.02f
 #define COCKPIT_DISPLAY_CENTER_THRESHOLD 0.25f
 #define COCKPIT_DISPLAY_WIDTH_THRESHOLD 0.20f
+constexpr int COCKPIT_MOTION_OBJECT_HANDLE = 0x20000000;
 struct tCockpitCfgInfo
 {
 	char modelname[PSFILENAME_LEN];
@@ -110,6 +111,8 @@ static void BuildCockpitDisplayAdjustments();
 static void ApplyCockpitDisplayAdjustments(float display_spread);
 static float GetCockpitDisplaySpread();
 static vector CockpitRootVectorToSubmodelParent(poly_model* pm, int submodel, vector root_vec);
+static void BeginCockpitMotionObject(vector* pos, matrix* orient);
+static void EndCockpitMotionObject();
 
 static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
 {
@@ -117,6 +120,18 @@ static float CockpitSubmodelCenterX(poly_model* pm, int submodel)
 	for (int mn = submodel; mn >= 0; mn = pm->submodel[mn].parent)
 		x += pm->submodel[mn].offset.x;
 	return x;
+}
+
+static void BeginCockpitMotionObject(vector* pos, matrix* orient)
+{
+	PolymodelMotionBeginObject(COCKPIT_MOTION_OBJECT_HANDLE, pos, orient);
+	rend_BeginMotionObject(COCKPIT_MOTION_OBJECT_HANDLE, 0.0f, 0.0f);
+}
+
+static void EndCockpitMotionObject()
+{
+	rend_EndMotionObject();
+	PolymodelMotionEndObject();
 }
 
 static int CockpitSideFromCenter(float x, float threshold)
@@ -726,6 +741,7 @@ void RenderCockpit()
 	rend_SetZBufferState(1);
 	{
 		renderer_3d_draw_call_scope cockpit_draw_scope(RENDERER_DRAW_CALL_3D_COCKPIT);
+		BeginCockpitMotionObject(&view_pos, &view_tmat);
 		PolymodelSetCockpitBatching(true);
 		CockpitSetTransparentArmFaceFilter(true);
 		DrawPolygonModel(&view_pos, &view_tmat, Cockpit_info.model_num, normalized_time, 0, &light_vec, light_scalar_r, light_scalar_g, light_scalar_b, Cockpit_info.nonlayered_mask, 0, 1);
@@ -746,6 +762,7 @@ void RenderCockpit()
 		CockpitSetTransparentArmFaceFilter(false);
 		PolymodelSetCockpitBatching(false);
 	}
+	EndCockpitMotionObject();
 	rend_SetZBufferState(0);
 
 	if (display_adjust_active)

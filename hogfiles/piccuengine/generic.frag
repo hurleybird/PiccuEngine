@@ -44,6 +44,7 @@ uniform mat4 motion_vector_current_view_projection;
 uniform mat4 motion_vector_previous_view_projection;
 uniform vec2 motion_vector_screen_size;
 uniform int motion_vector_has_previous;
+uniform int motion_vector_payload_type;
 
 in vec4 outcolor;
 in vec4 outnormal;
@@ -120,7 +121,18 @@ void main()
 	velocity = vec2(0.0);
 	if (motion_vector_mode == 2)
 	{
-		if (motion_vector_has_previous != 0 && abs(out_motion_world_position.w) > 0.00001)
+		if (motion_vector_payload_type == 1)
+		{
+			if (motion_vector_has_previous != 0 &&
+				abs(out_motion_world_position.w) > 0.00001 &&
+				abs(out_motion_previous_world_position.w) > 0.00001)
+			{
+				vec2 current_ndc = out_motion_world_position.xy / out_motion_world_position.w;
+				vec2 previous_ndc = out_motion_previous_world_position.xy / out_motion_previous_world_position.w;
+				velocity = (current_ndc - previous_ndc) * 0.5;
+			}
+		}
+		else if (motion_vector_has_previous != 0 && abs(out_motion_world_position.w) > 0.00001)
 		{
 			vec3 world_position = out_motion_world_position.xyz / out_motion_world_position.w;
 			vec3 previous_world_position = world_position;

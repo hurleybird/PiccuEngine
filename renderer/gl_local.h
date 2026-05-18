@@ -138,12 +138,17 @@ class GL4Renderer : public IRenderer
 	GLint blitshader_uv_scale = -1;
 	GLint downsampleshader_gamma = -1;
 	GLint downsampleshader_dest_origin = -1;
+	GLint downsampleshader_source_visible_origin = -1;
+	GLint downsampleshader_source_visible_size = -1;
 	GLint motionvector_screen_size = -1;
 	GLint ao_composite_final_source = -1;
 	GLint ao_composite_scene_source = -1;
 	GLint ao_composite_ao_scene_source = -1;
 	GLint ao_composite_protection_mask = -1;
 	GLint ao_composite_use_protection_mask = -1;
+	GLint ao_composite_visible_origin = -1;
+	GLint ao_composite_visible_size = -1;
+	GLint ao_composite_use_visible_rect = -1;
 	GLfloat max_line_width = 1.0f;
 	GLfloat max_point_size = 1.0f;
 

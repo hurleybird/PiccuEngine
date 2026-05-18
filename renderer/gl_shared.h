@@ -150,7 +150,9 @@ public:
 	//Will set current read framebuffer to m_name. Will not trash viewport.
 	void BlitTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h, bool linear_filter = false);
 	void DownsampleTo(GLuint target, unsigned int x, unsigned int y, unsigned int w, unsigned int h,
-		GLint gamma_uniform, float gamma, GLint dest_origin_uniform);
+		GLint gamma_uniform, float gamma, GLint dest_origin_uniform,
+		GLint source_visible_origin_uniform = -1, GLint source_visible_size_uniform = -1,
+		int source_visible_x = 0, int source_visible_y = 0, int source_visible_w = 0, int source_visible_h = 0);
 
 	//When called without MSAA, just binds m_name to the read slot.
 	//When called with MSAA, will resolve to m_subname and bind that.
@@ -281,6 +283,8 @@ struct BloomResources
 	GLint threshold_value = -1;
 	GLint threshold_use_depth_mask = -1;
 	GLint threshold_use_protection_mask = -1;
+	GLint threshold_source_origin = -1;
+	GLint threshold_source_visible_size = -1;
 	GLint merge_spread = -1;
 	GLint composite_gamma = -1;
 	GLint composite_intensity = -1;
@@ -288,12 +292,14 @@ struct BloomResources
 	GLint composite_use_protection_mask = -1;
 	GLint composite_uv_origin = -1;
 	GLint composite_uv_scale = -1;
+	GLint composite_source_origin = -1;
 
 	void InitShaders();
 	void DestroyShaders();
 	void DestroyFramebuffers();
 	Framebuffer* Apply(Framebuffer* source, const renderer_preferred_state& pref_state,
-		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture);
+		const rendering_state& render_state, float display_gamma, GLuint depth_texture, GLuint protection_mask_texture,
+		int visible_x = 0, int visible_y = 0, int visible_w = 0, int visible_h = 0);
 };
 
 //Ground-Truth Ambient Occlusion. Renders depth-driven AO, then modulates the

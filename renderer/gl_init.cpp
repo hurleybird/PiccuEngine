@@ -709,6 +709,12 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	downsampleshader_dest_origin = downsampleshader.FindUniform("dest_origin");
 	if (downsampleshader_dest_origin == -1)
 		Error("GLRenderer::Init: Failed to find downsample dest_origin uniform!");
+	downsampleshader_source_visible_origin = downsampleshader.FindUniform("source_visible_origin");
+	downsampleshader_source_visible_size = downsampleshader.FindUniform("source_visible_size");
+	if (downsampleshader_source_visible_origin != -1)
+		glUniform2i(downsampleshader_source_visible_origin, 0, 0);
+	if (downsampleshader_source_visible_size != -1)
+		glUniform2i(downsampleshader_source_visible_size, 0, 0);
 
 	motionvectorshader.AttachSource(motionVectorVertexSrc, motionVectorFragmentSrc);
 	motionvectorshader.Use();
@@ -723,6 +729,9 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	ao_composite_ao_scene_source = ao_compositeshader.FindUniform("ao_scene_source");
 	ao_composite_protection_mask = ao_compositeshader.FindUniform("protection_mask");
 	ao_composite_use_protection_mask = ao_compositeshader.FindUniform("use_protection_mask");
+	ao_composite_visible_origin = ao_compositeshader.FindUniform("visible_origin");
+	ao_composite_visible_size = ao_compositeshader.FindUniform("visible_size");
+	ao_composite_use_visible_rect = ao_compositeshader.FindUniform("use_visible_rect");
 	if (ao_composite_final_source != -1)
 		glUniform1i(ao_composite_final_source, 0);
 	if (ao_composite_scene_source != -1)
@@ -732,7 +741,8 @@ int GL4Renderer::Init(oeApplication* app, renderer_preferred_state* pref_state)
 	if (ao_composite_protection_mask != -1)
 		glUniform1i(ao_composite_protection_mask, 3);
 	if (ao_composite_final_source == -1 || ao_composite_scene_source == -1 || ao_composite_ao_scene_source == -1 ||
-		ao_composite_protection_mask == -1 || ao_composite_use_protection_mask == -1)
+		ao_composite_protection_mask == -1 || ao_composite_use_protection_mask == -1 ||
+		ao_composite_visible_origin == -1 || ao_composite_visible_size == -1 || ao_composite_use_visible_rect == -1)
 		Error("GLRenderer::Init: Failed to find AO deferred composite uniforms!");
 	ShaderProgram::ClearBinding();
 

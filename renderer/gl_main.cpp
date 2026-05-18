@@ -1095,6 +1095,12 @@ bool GL4Renderer::BeginPostPresentFrame()
 	const bool ao_enabled = OpenGL_preferred_state.gtao_enabled && framebuffer_ok;
 	const bool bloom_enabled = OpenGL_preferred_state.bloom_enabled;
 	const bool late_post_enabled = ao_enabled || bloom_enabled;
+	const int framebuffer_logical_bottom_offset =
+		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+	const int post_visible_origin_x = framebuffer_logical_offset_x;
+	const int post_visible_origin_y = framebuffer_logical_bottom_offset;
+	const int post_visible_width = OpenGL_state.screen_width;
+	const int post_visible_height = OpenGL_state.screen_height;
 	post_present_framebuffer.Update(OpenGL_state.screen_width, OpenGL_state.screen_height, 0);
 	if (supersampling_factor >= 4)
 	{
@@ -1103,7 +1109,9 @@ bool GL4Renderer::BeginPostPresentFrame()
 			PERF_MARKER_SCOPE("Post.PresentDownsample.4xTo2x");
 			framebuffers[framebuffer_current_draw].DownsampleTo(downscale_framebuffer.Handle(), 0, 0,
 				downscale_framebuffer.Width(), downscale_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-				downsampleshader_dest_origin);
+				downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+				downsampleshader_source_visible_size, post_visible_origin_x * 4,
+				post_visible_origin_y * 4, post_visible_width * 4, post_visible_height * 4);
 		}
 		GL4PerfGpuDrain("GPU.PresentDownsample.4xTo2x");
 		downsampleshader.Use();
@@ -1111,7 +1119,9 @@ bool GL4Renderer::BeginPostPresentFrame()
 			PERF_MARKER_SCOPE("Post.PresentDownsample.2xTo1x");
 			downscale_framebuffer.DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
 				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-				downsampleshader_dest_origin);
+				downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+				downsampleshader_source_visible_size, post_visible_origin_x * 2,
+				post_visible_origin_y * 2, post_visible_width * 2, post_visible_height * 2);
 		}
 		GL4PerfGpuDrain("GPU.PresentDownsample.2xTo1x");
 		present_framebuffer = &resolved_framebuffer;
@@ -1123,7 +1133,9 @@ bool GL4Renderer::BeginPostPresentFrame()
 			PERF_MARKER_SCOPE("Post.PresentDownsample.2xTo1x");
 			framebuffers[framebuffer_current_draw].DownsampleTo(resolved_framebuffer.Handle(), 0, 0,
 				resolved_framebuffer.Width(), resolved_framebuffer.Height(), downsampleshader_gamma, display_gamma,
-				downsampleshader_dest_origin);
+				downsampleshader_dest_origin, downsampleshader_source_visible_origin,
+				downsampleshader_source_visible_size, post_visible_origin_x * 2,
+				post_visible_origin_y * 2, post_visible_width * 2, post_visible_height * 2);
 		}
 		GL4PerfGpuDrain("GPU.PresentDownsample.2xTo1x");
 		present_framebuffer = &resolved_framebuffer;
@@ -1175,6 +1187,15 @@ bool GL4Renderer::BeginPostPresentFrame()
 		const int gtao_noise_origin_x = framebuffer_logical_offset_x;
 		const int gtao_noise_origin_y =
 			framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+		const int visible_origin_x = framebuffer_logical_offset_x;
+		const int visible_origin_y =
+			framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+		const int visible_width = OpenGL_state.screen_width;
+		const int visible_height = OpenGL_state.screen_height;
+		const bool mask_overscan_for_ao =
+			visible_origin_x != 0 || visible_origin_y != 0 ||
+			visible_width != (int)present_framebuffer->Width() ||
+			visible_height != (int)present_framebuffer->Height();
 
 		float near_z = last_nearz;
 		float far_z = last_farz;
@@ -1212,6 +1233,12 @@ bool GL4Renderer::BeginPostPresentFrame()
 			ao_composite_framebuffer.Update(present_framebuffer->Width(), present_framebuffer->Height(), 0);
 			ao_compositeshader.Use();
 			glUniform1i(ao_composite_use_protection_mask, ao_suppression_mask_texture != 0 ? 1 : 0);
+			if (ao_composite_visible_origin != -1)
+				glUniform2f(ao_composite_visible_origin, (float)visible_origin_x, (float)visible_origin_y);
+			if (ao_composite_visible_size != -1)
+				glUniform2f(ao_composite_visible_size, (float)visible_width, (float)visible_height);
+			if (ao_composite_use_visible_rect != -1)
+				glUniform1i(ao_composite_use_visible_rect, mask_overscan_for_ao ? 1 : 0);
 			rend_ClearBoundTextures();
 			GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 			GL_BindFramebufferTexture(bloom_source_framebuffer.ColorTextureForRead(), 1, GL_NEAREST);
@@ -1243,12 +1270,11 @@ bool GL4Renderer::BeginPostPresentFrame()
 
 	Framebuffer* bloom_framebuffer = bloom.Apply(bloom_enabled ? present_framebuffer : nullptr,
 		OpenGL_preferred_state, OpenGL_state, display_gamma,
-		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture);
+		late_post_enabled ? present_framebuffer->DepthTextureForRead() : 0, protection_mask_texture,
+		post_visible_origin_x, post_visible_origin_y, post_visible_width, post_visible_height);
 	GL4PerfGpuDrain("GPU.Bloom.Apply");
 	const float post_uv_origin_x = present_framebuffer->Width() > 0 ?
 		(float)framebuffer_logical_offset_x / (float)present_framebuffer->Width() : 0.0f;
-	const int framebuffer_logical_bottom_offset =
-		framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
 	const float post_uv_origin_y = present_framebuffer->Height() > 0 ?
 		(float)framebuffer_logical_bottom_offset / (float)present_framebuffer->Height() : 0.0f;
 	const float post_uv_scale_x = present_framebuffer->Width() > 0 ?
@@ -1266,6 +1292,8 @@ bool GL4Renderer::BeginPostPresentFrame()
 			glUniform2f(bloom.composite_uv_origin, post_uv_origin_x, post_uv_origin_y);
 		if (bloom.composite_uv_scale != -1)
 			glUniform2f(bloom.composite_uv_scale, post_uv_scale_x, post_uv_scale_y);
+		if (bloom.composite_source_origin != -1)
+			glUniform2i(bloom.composite_source_origin, post_visible_origin_x, post_visible_origin_y);
 		rend_ClearBoundTextures();
 		GL_BindFramebufferTexture(present_framebuffer->ColorTextureForRead(), 0, GL_NEAREST);
 		GL_BindFramebufferTexture(bloom_framebuffer->ColorTextureForRead(), 1, GL_LINEAR);
@@ -1361,6 +1389,10 @@ void GL4Renderer::EndPostPresentFrame()
 		UpdatePresentRect();
 		blitshader.Use();
 		glUniform1f(blitshader_gamma, 1.0f);
+		if (blitshader_uv_origin != -1)
+			glUniform2f(blitshader_uv_origin, 0.0f, 0.0f);
+		if (blitshader_uv_scale != -1)
+			glUniform2f(blitshader_uv_scale, 1.0f, 1.0f);
 		{
 			PERF_MARKER_SCOPE("Renderer.Flip.BackbufferBlit");
 			post_present_framebuffer.BlitTo(0, framebuffer_blit_x, framebuffer_blit_y,
@@ -1475,18 +1507,28 @@ void GL4Renderer::CaptureBloomSource()
 			{
 				int supersampling_factor = SupersamplingFactor();
 				float display_gamma = OpenGL_preferred_state.gamma != 0.0f ? 1.f / OpenGL_preferred_state.gamma : 1.f;
+				const int framebuffer_logical_bottom_offset =
+					framebuffer_logical_height - OpenGL_state.screen_height - framebuffer_logical_offset_y;
+				const int visible_origin_x = framebuffer_logical_offset_x;
+				const int visible_origin_y = framebuffer_logical_bottom_offset;
+				const int visible_width = OpenGL_state.screen_width;
+				const int visible_height = OpenGL_state.screen_height;
 				if (supersampling_factor >= 4)
 				{
 					bloom_source_downscale_framebuffer.Update(framebuffer_logical_width * 2, framebuffer_logical_height * 2, 0);
 					downsampleshader.Use();
 					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_downscale_framebuffer.Handle(), 0, 0,
 						bloom_source_downscale_framebuffer.Width(), bloom_source_downscale_framebuffer.Height(),
-						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin,
+						downsampleshader_source_visible_origin, downsampleshader_source_visible_size,
+						visible_origin_x * 4, visible_origin_y * 4, visible_width * 4, visible_height * 4);
 					GL4PerfGpuDrain("GPU.CaptureDownsample.4xTo2x");
 					downsampleshader.Use();
 					bloom_source_downscale_framebuffer.DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
 						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin,
+						downsampleshader_source_visible_origin, downsampleshader_source_visible_size,
+						visible_origin_x * 2, visible_origin_y * 2, visible_width * 2, visible_height * 2);
 					GL4PerfGpuDrain("GPU.CaptureDownsample.2xTo1x");
 				}
 				else if (supersampling_factor >= 2)
@@ -1494,7 +1536,9 @@ void GL4Renderer::CaptureBloomSource()
 					downsampleshader.Use();
 					framebuffers[framebuffer_current_draw].DownsampleTo(bloom_source_framebuffer.Handle(), 0, 0,
 						bloom_source_framebuffer.Width(), bloom_source_framebuffer.Height(),
-						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin);
+						downsampleshader_gamma, display_gamma, downsampleshader_dest_origin,
+						downsampleshader_source_visible_origin, downsampleshader_source_visible_size,
+						visible_origin_x * 2, visible_origin_y * 2, visible_width * 2, visible_height * 2);
 					GL4PerfGpuDrain("GPU.CaptureDownsample.2xTo1x");
 				}
 				else

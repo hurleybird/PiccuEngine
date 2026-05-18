@@ -182,15 +182,6 @@ static int ConfigNormalizeGTAOResolution(int resolution)
 	return resolution;
 }
 
-static int ConfigNormalizeGTAOOverscanPercent(int percent)
-{
-	if (percent < 100)
-		return 100;
-	if (percent > 150)
-		return 150;
-	return percent;
-}
-
 static int SupersamplingFactorToIndex(int factor)
 {
 	switch (ConfigNormalizeSupersamplingFactor(factor))
@@ -1120,7 +1111,6 @@ struct video_menu
 	int* antialiasing;
 	int* supersampling;
 	int* gtao;
-	short* gtao_overscan;
 	int* backend;
 
 	int window_width, window_height;
@@ -1258,12 +1248,6 @@ struct video_menu
 			}
 			changed = true;
 		}
-		if (gtao_overscan && sheet->HasChanged(gtao_overscan))
-		{
-			Render_preferred_state.gtao_overscan_percent = (ushort)ConfigNormalizeGTAOOverscanPercent(
-				CALC_SLIDER_INT_VALUE(*gtao_overscan, 100, 150, 50));
-			changed = true;
-		}
 		if (perf_markers && sheet->HasChanged(perf_markers))
 		{
 			PerfMarkersSetEnabled(*perf_markers);
@@ -1342,7 +1326,6 @@ struct video_menu
 		antialiasing = NULL;
 		supersampling = NULL;
 		gtao = NULL;
-		gtao_overscan = NULL;
 		backend = NULL;
 		window_width = window_height = 0;
 		window_aspect = CONFIG_ASPECT_16_9;
@@ -1421,17 +1404,6 @@ struct video_menu
 		*gtao = ConfigCanUseGTAO() ?
 			GTAOPresetToIndex(Render_preferred_state.gtao_enabled, Render_preferred_state.gtao_resolution) : 0;
 
-		sheet->NewGroup(NULL, 184, 226);
-		tSliderSettings ao_overscan_settings = {};
-		ao_overscan_settings.min_val.i = 100;
-		ao_overscan_settings.max_val.i = 150;
-		ao_overscan_settings.type = SLIDER_UNITS_INT;
-		Render_preferred_state.gtao_overscan_percent =
-			(ushort)ConfigNormalizeGTAOOverscanPercent(Render_preferred_state.gtao_overscan_percent);
-		gtao_overscan = sheet->AddSlider("AO Overscan", 50,
-			CALC_SLIDER_POS_INT(Render_preferred_state.gtao_overscan_percent, &ao_overscan_settings, 50),
-			&ao_overscan_settings);
-
 		sheet->NewGroup(NULL, 0, 254);
 		perf_markers = sheet->AddLongCheckBox("Perf markers", Perf_markers_enabled);
 		show_fps = sheet->AddLongCheckBox("Show FPS", (Hud_stat_mask & STAT_FPS) != 0);
@@ -1457,9 +1429,6 @@ struct video_menu
 			else
 				ApplyGTAOPresetFromIndex(0);
 		}
-		if (gtao_overscan)
-			Render_preferred_state.gtao_overscan_percent = (ushort)ConfigNormalizeGTAOOverscanPercent(
-				CALC_SLIDER_INT_VALUE(*gtao_overscan, 100, 150, 50));
 		if (perf_markers)
 			PerfMarkersSetEnabled(*perf_markers);
 		if (show_fps)

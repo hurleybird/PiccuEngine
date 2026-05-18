@@ -223,6 +223,7 @@ class GL4Renderer : public IRenderer
 	GLint drawshader_cockpit_scanline_thickness_uniforms[8] = {};
 	GLint drawshader_cockpit_scanline_phase_uniforms[8] = {};
 	GLint drawshader_motion_vector_mode_uniforms[8] = {};
+	GLint drawshader_motion_vector_current_view_projection_uniforms[8] = {};
 	GLint drawshader_motion_vector_previous_view_projection_uniforms[8] = {};
 	GLint drawshader_motion_vector_screen_size_uniforms[8] = {};
 	GLint drawshader_motion_vector_has_previous_uniforms[8] = {};
@@ -349,6 +350,7 @@ private:
 	bool MotionVectorTargetEnabled() const;
 	bool PixelMotionVectorModeEnabled() const;
 	bool MotionVectorWritesEnabled() const;
+	bool CurrentDrawWritesPixelMotionVectors() const;
 	void DrawMotionVectorDebugPreview(int supersampling_factor);
 	void UseSceneDrawBuffers();
 

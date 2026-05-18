@@ -284,7 +284,11 @@ void GL4Renderer::BindPipeline(uint32_t handle)
 		GLint motion_vector_mode_uniform = gl_shaderprogs[handle].FindUniform("motion_vector_mode");
 		if (motion_vector_mode_uniform != -1)
 			glUniform1i(motion_vector_mode_uniform,
-				PixelMotionVectorModeEnabled() ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF);
+				CurrentDrawWritesPixelMotionVectors() ? RENDERER_MOTION_VECTOR_PIXEL : RENDERER_MOTION_VECTOR_OFF);
+		GLint motion_vector_current_view_projection_uniform =
+			gl_shaderprogs[handle].FindUniform("motion_vector_current_view_projection");
+		if (motion_vector_current_view_projection_uniform != -1)
+			glUniformMatrix4fv(motion_vector_current_view_projection_uniform, 1, GL_FALSE, current_view_projection);
 		GLint motion_vector_previous_view_projection_uniform =
 			gl_shaderprogs[handle].FindUniform("motion_vector_previous_view_projection");
 		if (motion_vector_previous_view_projection_uniform != -1)

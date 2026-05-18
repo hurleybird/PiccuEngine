@@ -1845,6 +1845,8 @@ void GL4Renderer::SetZBufferState(sbyte state)
 
 	OpenGL_sets_this_frame[5]++;
 	OpenGL_state.cur_zbuffer_state = state;
+	if (PixelMotionVectorModeEnabled())
+		legacy_draw_uniforms_dirty = true;
 
 	//	mprintf ((0,"OPENGL: Setting zbuffer state to %d.\n",state));
 

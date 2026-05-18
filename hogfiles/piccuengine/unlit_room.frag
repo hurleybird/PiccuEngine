@@ -7,6 +7,7 @@ uniform float ao_weight_value;
 uniform int ao_capture_weight_mode;
 
 uniform int motion_vector_mode;
+uniform mat4 motion_vector_current_view_projection;
 uniform mat4 motion_vector_previous_view_projection;
 uniform vec2 motion_vector_screen_size;
 uniform int motion_vector_has_previous;
@@ -16,12 +17,13 @@ vec2 ComputeMotionVector(vec3 world_position)
 	if (motion_vector_mode != 2 || motion_vector_has_previous == 0)
 		return vec2(0.0);
 
+	vec4 current_clip = motion_vector_current_view_projection * vec4(world_position, 1.0);
 	vec4 previous_clip = motion_vector_previous_view_projection * vec4(world_position, 1.0);
-	if (previous_clip.w <= 0.00001)
+	if (current_clip.w <= 0.00001 || previous_clip.w <= 0.00001)
 		return vec2(0.0);
 
+	vec2 current_ndc = current_clip.xy / current_clip.w;
 	vec2 previous_ndc = previous_clip.xy / previous_clip.w;
-	vec2 current_ndc = (gl_FragCoord.xy / max(motion_vector_screen_size, vec2(1.0))) * 2.0 - 1.0;
 	return (current_ndc - previous_ndc) * 0.5;
 }
 

@@ -1480,17 +1480,17 @@ static bool DisplayTerrainListCompute(int cellcount, bool from_automap, bool fog
 		PERF_MARKER_SCOPE("Compute.EnsureTerrainPipelines");
 		EnsureTerrainPipelinesReady();
 	}
+	rend_SetColorModel(CM_RGB);
+	rend_SetTextureType(TT_LINEAR);
+	rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+	rend_SetAlphaValue(255);
+	rend_SetLighting(LS_NONE);
+	rend_SetWrapType(WT_WRAP);
 	if (fog_enabled)
 		rend_BindPipeline(Terrain_legacy_compute_fog_handle);
 	else
 		rend_BindPipeline(Terrain_legacy_compute_handle);
 	SetTerrainComputeDynamicLightUniforms();
-
-	rend_SetColorModel(CM_RGB);
-	rend_SetTextureType(TT_LINEAR);
-	rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
-	rend_SetLighting(LS_NONE);
-	rend_SetWrapType(WT_WRAP);
 	rend_ClearBoundTextures();
 	{
 		PERF_MARKER_SCOPE("Compute.BindTextureArrays");
@@ -3485,6 +3485,7 @@ void DisplayTerrainList(int cellcount, bool from_automap)
 	rend_SetColorModel(CM_RGB);
 	rend_SetTextureType(TT_LINEAR);
 	rend_SetAlphaType(ATF_CONSTANT + ATF_TEXTURE);
+	rend_SetAlphaValue(255);
 	rend_SetLighting(LS_NONE);
 	if (!StateLimited || UseMultitexture)
 		draw_lightmap = true;

@@ -91,6 +91,12 @@ static bool RenderObject_IsLegacyMotionBlurEligible(const object* obj)
 		Object_map_position_history[OBJNUM(obj)] != -1;
 }
 
+static int RenderObject_MotionObjectFlags(const object* obj)
+{
+	return RenderObject_IsLegacyMotionBlurEligible(obj) ?
+		RENDERER_MOTION_OBJECT_LEGACY_BLUR : RENDERER_MOTION_OBJECT_DEFAULT;
+}
+
 static double Render_object_perf_first_time = 0.0;
 static double Render_object_perf_total_time = 0.0;
 static double Render_object_perf_setup_time = 0.0;
@@ -1681,8 +1687,7 @@ void RenderObject_DrawPolymodel(object* obj, float* normalized_times)
 		SetPolymodelEffect(&pe);
 
 	PolymodelMotionBeginObject(OBJNUM(obj), &obj_pos, &obj->orient);
-	rend_BeginMotionObject(OBJNUM(obj), RenderObject_IsLegacyMotionBlurEligible(obj) ?
-		RENDERER_MOTION_OBJECT_LEGACY_BLUR : RENDERER_MOTION_OBJECT_DEFAULT);
+	rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
 	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 
 	if (RenderObjectType == RO_STATIC)
@@ -1972,9 +1977,15 @@ void DrawPowerupGlowDisk(object* obj)
 	}
 
 	// Draw lo-res disk
+	PolymodelMotionBeginObject(OBJNUM(obj), &obj->pos, &obj->orient);
+	rend_BeginMotionObject(OBJNUM(obj), RenderObject_MotionObjectFlags(obj));
+	rend_SetAOClass(RENDERER_AO_CLASS_POLYOBJECT);
 	rend_SetAOSuppression(1.0f);
 	DrawColoredDisk(&obj->pos, li->red_light1, li->green_light1, li->blue_light1, POWERUP_HALO_ALPHA * alpha_scalar, 0.0f, (obj->size / 2) + size_adjust, 0, 2);
 	rend_SetAOSuppression(0.0f);
+	rend_SetAOClass(RENDERER_AO_CLASS_DEFAULT);
+	rend_EndMotionObject();
+	PolymodelMotionEndObject();
 }
 
 // Draws the glowing disk around a player indicating damage

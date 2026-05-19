@@ -205,6 +205,11 @@ void main()
 		color = vec4(mix(color.rgb, fog.color.rgb, mag), color.a);
 		bloom_mask = max(bloom_mask, mag);
 	#endif
+	if (motion_vector_mode == 2 && color.a <= 0.001)
+	{
+		velocity = vec2(0.0);
+		motion_object_id = 0u;
+	}
 	post_mask = vec4(ao_mask, bloom_mask, 0.0, 1.0);
 	ao_class = float(clamp(ao_class_value, 0, 255)) / 255.0;
 }

@@ -198,6 +198,28 @@ void PolymodelMotionSetPoint(g3Point *point, poly_model *pm, int submodel_num, c
 	point->p3_motion_prev_world_valid = 1;
 }
 
+void PolymodelMotionSetObjectPoint(g3Point *point, const vector *world_pos)
+{
+	if (!point)
+		return;
+
+	point->p3_motion_world_valid = 0;
+	point->p3_motion_prev_world_valid = 0;
+	if (!Polymodel_motion_active_history || !world_pos)
+		return;
+
+	const PolymodelMotionSnapshot &current = Polymodel_motion_active_history->current;
+	point->p3_motion_world_pos = *world_pos;
+	point->p3_motion_world_valid = 1;
+
+	if (!Polymodel_motion_active)
+		return;
+
+	const PolymodelMotionSnapshot &previous = Polymodel_motion_active_history->previous;
+	point->p3_motion_prev_world_pos = previous.pos + (*world_pos - current.pos);
+	point->p3_motion_prev_world_valid = 1;
+}
+
 void PolymodelSetSubmodelOffsetAdjustments(int model_num, const vector *offsets, int count)
 {
 	Polymodel_submodel_adjust_model = model_num;

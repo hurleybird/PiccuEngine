@@ -157,6 +157,8 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 	const bool opaque_polyobject_or_cockpit_vertex_alpha =
 		(ao_class_draw_value == RENDERER_AO_CLASS_POLYOBJECT || cockpit_draw) &&
 		OpenGL_state.cur_alpha == 255;
+	const bool object_attached_motion_alpha =
+		ao_class_draw_value == RENDERER_AO_CLASS_POLYOBJECT && motion_object_active;
 
 	switch (OpenGL_state.cur_alpha_type)
 	{
@@ -165,11 +167,18 @@ bool GL4Renderer::CurrentDrawWritesPixelMotionVectors() const
 		return true;
 	case AT_CONSTANT_TEXTURE:
 	case AT_CONSTANT:
-		return OpenGL_state.cur_alpha == 255;
+		return OpenGL_state.cur_alpha == 255 || object_attached_motion_alpha;
 	case AT_TEXTURE_VERTEX:
-		return opaque_polyobject_or_cockpit_vertex_alpha;
+		return opaque_polyobject_or_cockpit_vertex_alpha || object_attached_motion_alpha;
 	case AT_CONSTANT_VERTEX:
-		return opaque_polyobject_or_cockpit_vertex_alpha && OpenGL_state.cur_texture_type == TT_FLAT;
+		return (opaque_polyobject_or_cockpit_vertex_alpha && OpenGL_state.cur_texture_type == TT_FLAT) ||
+			object_attached_motion_alpha;
+	case AT_VERTEX:
+	case AT_SATURATE_TEXTURE:
+	case AT_SATURATE_VERTEX:
+	case AT_SATURATE_CONSTANT_VERTEX:
+	case AT_SATURATE_TEXTURE_VERTEX:
+		return object_attached_motion_alpha;
 	default:
 		return false;
 	}

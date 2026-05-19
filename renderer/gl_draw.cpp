@@ -231,9 +231,6 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		motion_vectors.ObjectIdTextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
 	if (has_dynamic_velocity && (velocity_texture == 0 || object_id_texture == 0))
 		return;
-	GLuint protection_mask_texture = post_protection_mask_dirty ?
-		post_protection_mask.TextureForRead(framebuffers[framebuffer_current_draw].Handle()) : 0;
-
 	if (supersampling_factor < 1)
 		supersampling_factor = 1;
 	const int framebuffer_logical_bottom_offset =
@@ -254,14 +251,10 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 		glUniform1i(motionblur_color_source, 0);
 	if (motionblur_velocity_source != -1)
 		glUniform1i(motionblur_velocity_source, 1);
-	if (motionblur_protection_mask != -1)
-		glUniform1i(motionblur_protection_mask, 2);
 	if (motionblur_depth_source != -1)
 		glUniform1i(motionblur_depth_source, 3);
 	if (motionblur_object_id_source != -1)
 		glUniform1i(motionblur_object_id_source, 4);
-	if (motionblur_use_protection_mask != -1)
-		glUniform1i(motionblur_use_protection_mask, protection_mask_texture != 0 ? 1 : 0);
 	if (motionblur_velocity_uv_origin != -1)
 		glUniform2f(motionblur_velocity_uv_origin, uv_origin_x, uv_origin_y);
 	if (motionblur_velocity_uv_scale != -1)
@@ -321,8 +314,6 @@ void GL4Renderer::ApplyPixelMotionBlur(int supersampling_factor)
 	GL_BindFramebufferTexture(post_present_framebuffer.ColorTextureForRead(), 0, GL_LINEAR);
 	if (velocity_texture != 0)
 		GL_BindFramebufferTexture(velocity_texture, 1, GL_NEAREST);
-	if (protection_mask_texture != 0)
-		GL_BindFramebufferTexture(protection_mask_texture, 2, GL_NEAREST);
 	if (depth_texture != 0)
 		GL_BindFramebufferTexture(depth_texture, 3, GL_NEAREST);
 	if (object_id_texture != 0)

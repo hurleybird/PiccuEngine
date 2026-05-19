@@ -187,10 +187,8 @@ class GL4Renderer : public IRenderer
 	GLint motionvectorcopy_uv_scale = -1;
 	GLint motionblur_color_source = -1;
 	GLint motionblur_velocity_source = -1;
-	GLint motionblur_protection_mask = -1;
 	GLint motionblur_depth_source = -1;
 	GLint motionblur_object_id_source = -1;
-	GLint motionblur_use_protection_mask = -1;
 	GLint motionblur_velocity_uv_origin = -1;
 	GLint motionblur_velocity_uv_scale = -1;
 	GLint motionblur_strength = -1;

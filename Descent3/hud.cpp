@@ -940,11 +940,13 @@ void RenderHUDFrame(float zoom)
 	Small_hud_flag = (((float)Game_window_h / (float)Max_window_h) <= 0.80f) ? true : false;
 
 	bool must_render_cockpit = false;
+	bool render_hud_items_after_world_post = false;
 	bool render_reticle_after_world_post = false;
-	int reticle_window_x = Game_window_x;
-	int reticle_window_y = Game_window_y;
-	int reticle_window_w = Game_window_w;
-	int reticle_window_h = Game_window_h;
+	tStatMask post_world_hud_stat_mask = 0;
+	int post_world_hud_window_x = Game_window_x;
+	int post_world_hud_window_y = Game_window_y;
+	int post_world_hud_window_w = Game_window_w;
+	int post_world_hud_window_h = Game_window_h;
 	//	render special missile hud if available
 	if (Players[Player_num].guided_obj && !Guided_missile_smallview)
 	{
@@ -961,14 +963,16 @@ void RenderHUDFrame(float zoom)
 		switch (hudmode)
 		{
 		case HUD_FULLSCREEN:
-			RenderHUDItems(Hud_stat_mask);
+			render_hud_items_after_world_post = true;
+			post_world_hud_stat_mask = Hud_stat_mask;
 			must_render_cockpit = true; // needed to render animated deactivation sequence and should be dormant								
 			if (Game_toggles.show_reticle)
 				render_reticle_after_world_post = true;
 			break;
 
 		case HUD_COCKPIT:
-			RenderHUDItems(Hud_stat_mask);
+			render_hud_items_after_world_post = true;
+			post_world_hud_stat_mask = Hud_stat_mask;
 			must_render_cockpit = true; // called when cockpit is activating and functioning.									
 			if (Game_toggles.show_reticle)
 				render_reticle_after_world_post = true;
@@ -1002,36 +1006,62 @@ void RenderHUDFrame(float zoom)
 		Game_window_x = temp_window_x;
 	}
 
+	const bool render_post_world_hud = render_hud_items_after_world_post || render_reticle_after_world_post;
+	const bool render_cockpit_geometry =
+		must_render_cockpit && IsValidCockpit() && CockpitState() != COCKPIT_STATE_DORMANT;
+
 	// [ISB] extra pass to render the cockpit so it always uses correct window
-	if (must_render_cockpit)
+	if (render_post_world_hud || render_cockpit_geometry)
 	{
-		const bool cockpit_post_frame = rend_BeginCockpitFrame();
-		if (render_reticle_after_world_post)
+		const bool post_world_frame =
+			render_cockpit_geometry ? rend_BeginCockpitFrame() : rend_BeginPostPresentFrame();
+		if (render_post_world_hud)
 		{
-			if (cockpit_post_frame)
+			if (post_world_frame)
 			{
-				rend_StartPostPresentFrame(reticle_window_x, reticle_window_y,
-					reticle_window_x + reticle_window_w, reticle_window_y + reticle_window_h,
+				rend_StartPostPresentFrame(post_world_hud_window_x, post_world_hud_window_y,
+					post_world_hud_window_x + post_world_hud_window_w, post_world_hud_window_y + post_world_hud_window_h,
 					RF_CLEAR_ZBUFFER);
-				RenderReticle();
-				rend_EndFrame();
 			}
 			else
 			{
-				StartFrame(reticle_window_x, reticle_window_y,
-					reticle_window_x + reticle_window_w, reticle_window_y + reticle_window_h,
+				StartFrame(post_world_hud_window_x, post_world_hud_window_y,
+					post_world_hud_window_x + post_world_hud_window_w, post_world_hud_window_y + post_world_hud_window_h,
 					false);
-				RenderReticle();
-				EndFrame();
 			}
+
+			int saved_game_window_w = Game_window_w;
+			int saved_game_window_h = Game_window_h;
+			int saved_game_window_x = Game_window_x;
+			int saved_game_window_y = Game_window_y;
+			Game_window_w = post_world_hud_window_w;
+			Game_window_h = post_world_hud_window_h;
+			Game_window_x = post_world_hud_window_x;
+			Game_window_y = post_world_hud_window_y;
+			if (render_hud_items_after_world_post)
+				RenderHUDItems(post_world_hud_stat_mask);
+			if (render_reticle_after_world_post)
+				RenderReticle();
+			Game_window_w = saved_game_window_w;
+			Game_window_h = saved_game_window_h;
+			Game_window_x = saved_game_window_x;
+			Game_window_y = saved_game_window_y;
+
+			if (post_world_frame)
+				rend_EndFrame();
+			else
+				EndFrame();
 		}
-		StartFrame(false);
-		g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
-		RenderCockpit();
-		g3_EndFrame();
-		EndFrame();
-		if (cockpit_post_frame)
-			rend_EndCockpitFrame();
+		if (render_cockpit_geometry)
+		{
+			StartFrame(false);
+			g3_StartFrame(&Viewer_object->pos, &Viewer_object->orient, zoom);
+			RenderCockpit();
+			g3_EndFrame();
+			EndFrame();
+			if (post_world_frame)
+				rend_EndCockpitFrame();
+		}
 	}
 
 	rend_SetZBufferState(1);
